@@ -60,8 +60,8 @@ spl_autoload_register(function ($class) {
     }
 });
 
-// Initialize after Integrity has loaded
-add_action('integrity_loaded', function (): void {
+// Initialize Sentinel on plugins_loaded - no dependency on any single plugin
+add_action('plugins_loaded', function (): void {
     try {
         \Sentinel\Plugin::init();
 
@@ -91,19 +91,31 @@ add_action('integrity_loaded', function (): void {
             });
         }
     }
+}, 5); // Priority 5: load early so hooks below can fire
+
+// Listen for each monitored plugin's loaded action to refresh status
+$sentinel_plugin_hooks = [
+    'unity/loaded',
+    'scrutiny_loaded',
+    'integrity_loaded',
+    'concordance/loaded',
+    'amber/loaded',
+];
+
+foreach ($sentinel_plugin_hooks as $hook) {
+    add_action($hook, function () use ($hook): void {
+        do_action('sentinel/plugin_status_changed', $hook);
+    });
+}
+
+// Listen for plugin activation/deactivation to catch status changes immediately
+add_action('activated_plugin', function (string $plugin): void {
+    do_action('sentinel/plugin_status_changed', $plugin);
 });
 
-// Show error if Integrity is not active (check after plugins_loaded)
-add_action('plugins_loaded', function (): void {
-    if (!defined('INTEGRITY_VERSION')) {
-        add_action('admin_notices', function () {
-            echo '<div class="notice notice-error is-dismissible"><p>';
-            echo '<strong>Sentinel Plugin Error:</strong> ';
-            echo esc_html__('Sentinel requires the Integrity plugin to be installed and activated.', 'sentinel');
-            echo '</p></div>';
-        });
-    }
-}, 20);
+add_action('deactivated_plugin', function (string $plugin): void {
+    do_action('sentinel/plugin_status_changed', $plugin);
+});
 
 // Activation hook
 register_activation_hook(__FILE__, function (): void {

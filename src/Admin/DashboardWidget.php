@@ -8,59 +8,66 @@ use function add_action;
 use function current_user_can;
 use function esc_html;
 use function esc_html__;
+use function get_plugin_data;
 use function is_plugin_active;
+use function wp_enqueue_script;
 use function wp_enqueue_style;
+use function wp_localize_script;
 
 /**
  * Class DashboardWidget
  *
  * Registers a WordPress admin dashboard widget that displays the
  * version and activation status of monitored plugins.
+ *
+ * Includes an AJAX endpoint so the widget can refresh itself
+ * without a full page reload.
  */
 class DashboardWidget
 {
-    private const WIDGET_ID = 'sentinel_plugin_status';
+    private const WIDGET_ID   = 'sentinel_plugin_status';
+    private const AJAX_ACTION = 'sentinel_refresh_status';
 
     /**
      * Plugin registry - each entry defines a monitored plugin.
      *
-     * @var array<string, array{file: string, constant: string, label: string}>
+     * The 'file' path is relative to WP_PLUGIN_DIR and must match
+     * the value WordPress stores in the active_plugins option.
+     *
+     * @var array<string, array{file: string, label: string}>
      */
     private const PLUGINS = [
         'unity' => [
-            'file'     => 'unity/Unity.php',
-            'constant' => 'UNITY_VERSION',
-            'label'    => 'Unity',
+            'file'  => 'unity/Unity.php',
+            'label' => 'Unity',
         ],
         'tsml-for-unity' => [
-            'file'     => 'tsml-for-unity/tsml-for-unity.php',
-            'constant' => 'TSML_FOR_UNITY_VERSION',
-            'label'    => 'TSML for Unity',
+            'file'  => 'tsml-for-unity/tsml-for-unity.php',
+            'label' => 'TSML for Unity',
         ],
         'scrutiny' => [
-            'file'     => 'scrutiny/Scrutiny.php',
-            'constant' => 'SCRUTINY_VERSION',
-            'label'    => 'Scrutiny',
-        ],
-        'integrity' => [
-            'file'     => 'integrity/integrity.php',
-            'constant' => 'INTEGRITY_VERSION',
-            'label'    => 'Integrity',
-        ],
-        'reconcile' => [
-            'file'     => 'reconcile/reconcile.php',
-            'constant' => 'RECONCILE_VERSION',
-            'label'    => 'Reconcile',
-        ],
-        'concordance' => [
-            'file'     => 'concordance/Concordance.php',
-            'constant' => 'CONCORDANCE_VERSION',
-            'label'    => 'Concordance',
+            'file'  => 'scrutiny/Scrutiny.php',
+            'label' => 'Scrutiny',
         ],
         'amber' => [
-            'file'     => 'amber/Amber.php',
-            'constant' => 'AMBER_VERSION',
-            'label'    => 'Amber',
+            'file'  => 'amber/Amber.php',
+            'label' => 'Amber',
+        ],
+        'integrity' => [
+            'file'  => 'integrity/integrity.php',
+            'label' => 'Integrity',
+        ],
+        'reconcile' => [
+            'file'  => 'reconcile/reconcile.php',
+            'label' => 'Reconcile',
+        ],
+        'concordance' => [
+            'file'  => 'concordance/Concordance.php',
+            'label' => 'Concordance',
+        ],
+        'sentinel' => [
+            'file'  => 'sentinel/Sentinel.php',
+            'label' => 'Sentinel',
         ],
     ];
 
@@ -73,10 +80,11 @@ class DashboardWidget
     {
         add_action('wp_dashboard_setup', [self::class, 'register']);
         add_action('admin_enqueue_scripts', [self::class, 'enqueueAssets']);
+        add_action('wp_ajax_' . self::AJAX_ACTION, [self::class, 'ajaxRefresh']);
     }
 
     /**
-     * Enqueue widget-specific styles on the dashboard page only.
+     * Enqueue widget-specific styles and the refresh script on the dashboard.
      *
      * @param string $hook The current admin page hook.
      * @return void
@@ -93,6 +101,21 @@ class DashboardWidget
             [],
             SENTINEL_VERSION
         );
+
+        wp_enqueue_script(
+            'sentinel-dashboard',
+            SENTINEL_PLUGIN_URL . 'assets/dashboard.js',
+            [],
+            SENTINEL_VERSION,
+            true
+        );
+
+        wp_localize_script('sentinel-dashboard', 'sentinelAjax', [
+            'url'      => admin_url('admin-ajax.php'),
+            'action'   => self::AJAX_ACTION,
+            'nonce'    => wp_create_nonce(self::AJAX_ACTION),
+            'interval' => 5, // seconds between polls
+        ]);
     }
 
     /**
@@ -114,6 +137,26 @@ class DashboardWidget
     }
 
     /**
+     * AJAX handler - returns the widget HTML fragment.
+     *
+     * @return void
+     */
+    public static function ajaxRefresh(): void
+    {
+        check_ajax_referer(self::AJAX_ACTION, 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized', 403);
+        }
+
+        ob_start();
+        self::render();
+        $html = ob_get_clean();
+
+        wp_send_json_success(['html' => $html]);
+    }
+
+    /**
      * Render the dashboard widget content.
      *
      * @return void
@@ -125,11 +168,11 @@ class DashboardWidget
             $plugins[$key] = self::getPluginStatus($definition);
         }
 
-        // Overall health: healthy only if every plugin is active
+        // Overall health: healthy only if every installed plugin is active
         $allActive    = true;
         $anyInstalled = false;
         foreach ($plugins as $info) {
-            if (!$info['active']) {
+            if ($info['installed'] && !$info['active']) {
                 $allActive = false;
             }
             if ($info['installed']) {
@@ -137,7 +180,12 @@ class DashboardWidget
             }
         }
 
-        if ($allActive) {
+        // Also flag if nothing is installed at all
+        if (!$anyInstalled) {
+            $allActive = false;
+        }
+
+        if ($allActive && $anyInstalled) {
             $overallHealth = 'healthy';
             $overallLabel  = __('All Systems Operational', 'sentinel');
         } elseif ($anyInstalled) {
@@ -156,6 +204,9 @@ class DashboardWidget
                 <span class="sentinel-status-label">
                     <?php echo esc_html($overallLabel); ?>
                 </span>
+                <span class="sentinel-version">
+                    Sentinel v<?php echo esc_html(SENTINEL_VERSION); ?>
+                </span>
             </div>
 
             <!-- Plugin Status Table -->
@@ -172,7 +223,7 @@ class DashboardWidget
                         <tr>
                             <td class="sentinel-plugin-name"><?php echo esc_html($info['label']); ?></td>
                             <td>
-                                <?php if ($info['installed']): ?>
+                                <?php if ($info['version']): ?>
                                     <code><?php echo esc_html($info['version']); ?></code>
                                 <?php else: ?>
                                     <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
@@ -199,7 +250,6 @@ class DashboardWidget
             </table>
 
             <?php
-            // Show help text for any plugins that need attention
             $inactive = array_filter($plugins, fn($p) => $p['installed'] && !$p['active']);
             $missing  = array_filter($plugins, fn($p) => !$p['installed']);
 
@@ -238,7 +288,10 @@ class DashboardWidget
     /**
      * Gather status information for a single plugin.
      *
-     * @param array{file: string, constant: string, label: string} $definition
+     * Reads the version from the plugin file header (via get_plugin_data)
+     * so it is available even when the plugin is inactive.
+     *
+     * @param array{file: string, label: string} $definition
      * @return array{installed: bool, active: bool, version: string, label: string}
      */
     private static function getPluginStatus(array $definition): array
@@ -247,9 +300,16 @@ class DashboardWidget
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
-        $installed = file_exists(WP_PLUGIN_DIR . '/' . $definition['file']);
+        $fullPath  = WP_PLUGIN_DIR . '/' . $definition['file'];
+        $installed = file_exists($fullPath);
         $active    = is_plugin_active($definition['file']);
-        $version   = defined($definition['constant']) ? constant($definition['constant']) : '';
+        $version   = '';
+
+        // Read version from the file header - works whether active or not
+        if ($installed && function_exists('get_plugin_data')) {
+            $data    = get_plugin_data($fullPath, false, false);
+            $version = $data['Version'] ?? '';
+        }
 
         return [
             'installed' => $installed,
