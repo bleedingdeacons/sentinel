@@ -1,0 +1,31 @@
+{
+    "name": "bleeding-deacons/sentinel",
+    "description": "Dashboard monitoring widget for the Integrity REST API bridge plugin",
+    "type": "wordpress-plugin",
+    "version": "1.0.0",
+    "license": "MIT (Modified)",
+    "authors": [
+        {
+            "name": "The Bleeding Deacons",
+            "email": "thebleedingdeacons@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Sentinel\\": "src/"
+        }
+    },
+    "scripts": {
+        "build": "php build.php build:production",
+        "build:production": "php build.php build:production",
+        "build:dev": "php build.php build:dev",
+        "build:clean": "php build.php clean"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
