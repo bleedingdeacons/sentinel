@@ -168,32 +168,29 @@ class DashboardWidget
             $plugins[$key] = self::getPluginStatus($definition);
         }
 
-        // Overall health: healthy only if every installed plugin is active
-        $allActive    = true;
-        $anyInstalled = false;
+        // Overall health:
+        //   error   – any plugin is not installed
+        //   warn    – all installed but some inactive
+        //   healthy – every plugin installed and active
+        $anyMissing  = false;
+        $anyInactive = false;
         foreach ($plugins as $info) {
-            if ($info['installed'] && !$info['active']) {
-                $allActive = false;
-            }
-            if ($info['installed']) {
-                $anyInstalled = true;
+            if (!$info['installed']) {
+                $anyMissing = true;
+            } elseif (!$info['active']) {
+                $anyInactive = true;
             }
         }
 
-        // Also flag if nothing is installed at all
-        if (!$anyInstalled) {
-            $allActive = false;
-        }
-
-        if ($allActive && $anyInstalled) {
-            $overallHealth = 'healthy';
-            $overallLabel  = __('All Systems Operational', 'sentinel');
-        } elseif ($anyInstalled) {
+        if ($anyMissing) {
+            $overallHealth = 'error';
+            $overallLabel  = __('Plugins Missing', 'sentinel');
+        } elseif ($anyInactive) {
             $overallHealth = 'warn';
             $overallLabel  = __('Attention Required', 'sentinel');
         } else {
-            $overallHealth = 'error';
-            $overallLabel  = __('Plugins Missing', 'sentinel');
+            $overallHealth = 'healthy';
+            $overallLabel  = __('All Systems Operational', 'sentinel');
         }
 
         ?>
