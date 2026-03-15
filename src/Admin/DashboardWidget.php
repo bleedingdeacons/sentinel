@@ -65,10 +65,6 @@ class DashboardWidget
             'file'  => 'concordance/Concordance.php',
             'label' => 'Concordance',
         ],
-        'sentinel' => [
-            'file'  => 'sentinel/Sentinel.php',
-            'label' => 'Sentinel',
-        ],
     ];
 
     /**
