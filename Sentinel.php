@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 1.0.4
+ * Version: 1.0.5
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * Author: The Bleeding Deacons
@@ -54,8 +54,10 @@ spl_autoload_register(function ($class) {
             require $file;
         }
     } catch (\Exception $e) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Autoloader Error: ' . $e->getMessage());
     } catch (\Throwable $e) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Autoloader Fatal Error: ' . $e->getMessage());
     }
 });
@@ -68,7 +70,9 @@ add_action('plugins_loaded', function (): void {
         do_action('sentinel/loaded');
 
     } catch (\Exception $e) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Plugin Initialization Error: ' . $e->getMessage());
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Plugin Stack Trace: ' . $e->getTraceAsString());
 
         if (is_admin()) {
@@ -82,7 +86,9 @@ add_action('plugins_loaded', function (): void {
         }
 
     } catch (\Throwable $e) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Plugin Fatal Error: ' . $e->getMessage());
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
         error_log('Sentinel Plugin Stack Trace: ' . $e->getTraceAsString());
 
         if (is_admin()) {

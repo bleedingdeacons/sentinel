@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Sentinel\Admin;
 
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 use function add_action;
 use function current_user_can;
 use function esc_html;

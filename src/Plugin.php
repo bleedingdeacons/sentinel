@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Sentinel;
 
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 use Sentinel\Admin\DashboardWidget;
 
 /**
