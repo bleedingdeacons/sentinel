@@ -274,7 +274,7 @@ final class BD_Shared_Logger
         ];
 
         foreach ($context as $key => &$value) {
-            if (in_array(strtolower($key), $sensitive, true)) {
+            if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
                 $value = '*** REDACTED ***';
             } elseif (is_array($value)) {
                 $value = $this->redact($value);
@@ -418,128 +418,7 @@ final class BD_Shared_Logger
         $line = $this->format('emergency', 'Fatal: ' . $error['message'], $context);
         @file_put_contents($this->logFile, $line, FILE_APPEND | LOCK_EX);
     }
-
-    // ── WP-CLI ──
-
-    public static function registerCli(): void
-    {
-        // Kept for backwards compat — actual registration is now via BD_Shared_Logger_CLI class
-    }
 }
-
-// ─── WP-CLI Command Class ───────────────────────────────────────────────────
-
-/**
- * Manage the shared log file.
- */
-class BD_Shared_Logger_CLI extends \WP_CLI_Command
-{
-    /**
-     * Show the last N lines of the log file.
-     *
-     * ## OPTIONS
-     *
-     * [--lines=<number>]
-     * : Number of lines to show. Default: 50
-     *
-     * [--channel=<name>]
-     * : Filter to a specific plugin channel.
-     *
-     * [--level=<level>]
-     * : Filter to a specific log level (debug, info, warning, error, critical).
-     *
-     * ## EXAMPLES
-     *
-     *     wp log tail
-     *     wp log tail --lines=100
-     *     wp log tail --channel=amber
-     *     wp log tail --channel=reconcile --level=error
-     *
-     */
-    public function tail($args, $assoc_args): void
-    {
-        $logger  = BD_Shared_Logger::instance();
-        $lines   = (int) ($assoc_args['lines'] ?? 50);
-        $channel = $assoc_args['channel'] ?? null;
-        $level   = $assoc_args['level'] ?? null;
-        $file    = $logger->getLogFile();
-
-        if (!file_exists($file)) {
-            \WP_CLI::error('Log file not found: ' . $file);
-        }
-
-        $output = [];
-        $fp = fopen($file, 'r');
-        if ($fp) {
-            $allLines = [];
-            while (($line = fgets($fp)) !== false) {
-                $line = rtrim($line);
-                if (empty($line)) {
-                    continue;
-                }
-                if ($channel && !str_contains($line, "[$channel]")) {
-                    continue;
-                }
-                if ($level && !str_contains($line, '[' . strtoupper($level) . ']')) {
-                    continue;
-                }
-                $allLines[] = $line;
-            }
-            fclose($fp);
-            $output = array_slice($allLines, -$lines);
-        }
-
-        if (empty($output)) {
-            \WP_CLI::log('(no matching log entries)');
-            return;
-        }
-
-        foreach ($output as $line) {
-            \WP_CLI::log($line);
-        }
-    }
-
-    /**
-     * Clear the log file.
-     *
-     * ## EXAMPLES
-     *
-     *     wp log clear
-     *
-     */
-    public function clear($args, $assoc_args): void
-    {
-        $logger = BD_Shared_Logger::instance();
-        $file   = $logger->getLogFile();
-
-        if (file_exists($file)) {
-            file_put_contents($file, '');
-            \WP_CLI::success('Log file cleared.');
-        } else {
-            \WP_CLI::warning('No log file found.');
-        }
-    }
-
-    /**
-     * Show the log file path.
-     *
-     * ## EXAMPLES
-     *
-     *     wp log path
-     *
-     */
-    public function path($args, $assoc_args): void
-    {
-        $logger = BD_Shared_Logger::instance();
-        \WP_CLI::log($logger->getLogFile());
-    }
-}
-
-// ── Bootstrap ───────────────────────────────────────────────────────────────
-
-// WP-CLI commands are registered by Sentinel.php (the parent plugin),
-// not here, because mu-plugin CLI registration is unreliable across
-// different WP-CLI versions and hosting environments.
 
 // ── Global Helper ───────────────────────────────────────────────────────────
 

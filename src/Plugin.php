@@ -45,7 +45,12 @@ class Plugin
         // Initialize the dashboard widget and log viewer (admin only)
         if (is_admin()) {
             DashboardWidget::init();
-            LogViewerPage::init();
+
+            try {
+                LogViewerPage::init();
+            } catch (\Throwable $e) {
+                self::logError('LogViewerPage failed to initialise: ' . $e->getMessage());
+            }
         }
 
         self::logDebug('Sentinel initialised');

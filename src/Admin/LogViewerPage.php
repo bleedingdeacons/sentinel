@@ -343,19 +343,15 @@ class LogViewerPage
         <table class="sentinel-log-table widefat striped">
             <thead>
                 <tr>
-                    <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-level"><?php esc_html_e('Level', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-channel"><?php esc_html_e('Channel', 'sentinel'); ?></th>
-                    <th class="sentinel-log-col-message"><?php esc_html_e('Last Message', 'sentinel'); ?></th>
+                    <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-time"><?php esc_html_e('Last Seen', 'sentinel'); ?></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($aggregates as $entry): ?>
-                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?>">
-                        <td class="sentinel-log-col-count">
-                            <span class="sentinel-log-count"><?php echo esc_html(number_format($entry['count'])); ?></span>
-                        </td>
+                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
                         <td class="sentinel-log-col-level">
                             <span class="sentinel-badge sentinel-badge--<?php echo esc_attr($entry['level']); ?>">
                                 <?php echo esc_html(strtoupper($entry['level'])); ?>
@@ -364,11 +360,16 @@ class LogViewerPage
                         <td class="sentinel-log-col-channel">
                             <code><?php echo esc_html($entry['channel']); ?></code>
                         </td>
-                        <td class="sentinel-log-col-message">
-                            <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
+                        <td class="sentinel-log-col-count">
+                            <span class="sentinel-log-count"><?php echo esc_html(number_format($entry['count'])); ?></span>
                         </td>
                         <td class="sentinel-log-col-time">
                             <span class="sentinel-log-time"><?php echo esc_html($entry['last_seen']); ?></span>
+                        </td>
+                    </tr>
+                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-message">
+                        <td colspan="4" class="sentinel-log-col-message">
+                            <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
                         </td>
                     </tr>
                 <?php endforeach; ?>

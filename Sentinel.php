@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 1.2.1
+ * Version: 1.1.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * Author: The Bleeding Deacons
@@ -158,8 +158,16 @@ if (defined('WP_CLI') && WP_CLI) {
             \WP_CLI::log('(no matching log entries)');
             return;
         }
+        // Log format: [timestamp] [LEVEL] [channel] [type] [req:id] [mem:size] message {context}
+        $pattern = '/^(\[[^\]]+\]\s+\[[^\]]+\]\s+\[[^\]]+\]\s+\[[^\]]+\]\s+\[req:[^\]]+\]\s+\[mem:[^\]]+\])\s+(.*)$/';
         foreach ($output as $line) {
-            \WP_CLI::log($line);
+            if (preg_match($pattern, $line, $m)) {
+                \WP_CLI::log($m[1]);
+                \WP_CLI::log($m[2]);
+            } else {
+                \WP_CLI::log($line);
+            }
+            \WP_CLI::log('');
         }
     });
 
