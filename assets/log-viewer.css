@@ -1,0 +1,299 @@
+/* ==========================================================================
+   Sentinel – Log Viewer Admin Page
+   ========================================================================== */
+
+/* Section Layout
+   ========================================================================== */
+
+.sentinel-log-section {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.sentinel-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.sentinel-log-header h2 {
+    margin: 0;
+    padding: 0;
+    font-size: 16px;
+}
+
+.sentinel-log-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.sentinel-clear-btn {
+    color: #b32d2e !important;
+    border-color: #b32d2e !important;
+}
+
+.sentinel-clear-btn:hover {
+    background: #fcf0f1 !important;
+}
+
+/* Summary Stats
+   ========================================================================== */
+
+.sentinel-log-summary {
+    display: flex;
+    gap: 24px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: #f6f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.sentinel-log-stat {
+    font-size: 13px;
+    color: #50575e;
+}
+
+.sentinel-log-stat strong {
+    font-size: 15px;
+    color: #1d2327;
+    margin-right: 4px;
+}
+
+/* Empty State
+   ========================================================================== */
+
+.sentinel-log-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #646970;
+}
+
+.sentinel-log-empty .dashicons {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    color: #00a32a;
+    display: block;
+    margin: 0 auto 12px;
+}
+
+.sentinel-log-empty p {
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Aggregate Table
+   ========================================================================== */
+
+.sentinel-log-table {
+    border-collapse: collapse;
+}
+
+.sentinel-log-table thead th {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #50575e;
+    padding: 10px 12px;
+}
+
+.sentinel-log-table tbody td {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    vertical-align: top;
+}
+
+.sentinel-log-col-count {
+    width: 70px;
+    text-align: center !important;
+}
+
+.sentinel-log-col-level {
+    width: 90px;
+}
+
+.sentinel-log-col-channel {
+    width: 120px;
+}
+
+.sentinel-log-col-time {
+    width: 180px;
+    white-space: nowrap;
+}
+
+.sentinel-log-col-message {
+    word-break: break-word;
+}
+
+.sentinel-log-count {
+    display: inline-block;
+    min-width: 28px;
+    padding: 2px 8px;
+    background: #f0f0f1;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 12px;
+    text-align: center;
+    color: #50575e;
+}
+
+.sentinel-log-message {
+    font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+    font-size: 12px;
+    color: #1d2327;
+}
+
+.sentinel-log-time {
+    font-size: 12px;
+    color: #646970;
+}
+
+/* Level badges — reuse base sentinel-badge plus level-specific colours */
+
+.sentinel-badge--emergency,
+.sentinel-badge--alert,
+.sentinel-badge--critical {
+    background-color: #d63638;
+    color: #fff;
+}
+
+.sentinel-badge--error {
+    background-color: #fcf0f1;
+    color: #d63638;
+}
+
+.sentinel-badge--warning {
+    background-color: #fcf9e8;
+    color: #996800;
+}
+
+.sentinel-badge--notice {
+    background-color: #e7f5fe;
+    color: #0a4b78;
+}
+
+.sentinel-badge--info {
+    background-color: #edfaef;
+    color: #00a32a;
+}
+
+.sentinel-badge--debug {
+    background-color: #f0f0f1;
+    color: #646970;
+}
+
+/* Row highlight for severe levels */
+
+.sentinel-log-row--emergency td,
+.sentinel-log-row--alert td,
+.sentinel-log-row--critical td {
+    background-color: #fcf0f1 !important;
+}
+
+.sentinel-log-row--error td {
+    background-color: #fef8f8 !important;
+}
+
+/* Configuration Table
+   ========================================================================== */
+
+.sentinel-config-section {
+    margin-top: 20px;
+}
+
+.sentinel-config-table {
+    border-collapse: collapse;
+}
+
+.sentinel-config-table thead th {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #50575e;
+    padding: 10px 12px;
+}
+
+.sentinel-config-table tbody td {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    vertical-align: top;
+}
+
+.sentinel-config-name {
+    font-weight: 600;
+    font-size: 12px;
+    background: #f0f0f1;
+    padding: 3px 7px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.sentinel-config-value {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+}
+
+.sentinel-config-default {
+    color: #a7aaad;
+    font-style: italic;
+}
+
+.sentinel-config-set {
+    color: #1d2327;
+    font-weight: 500;
+}
+
+.sentinel-config-options {
+    color: #646970;
+    font-style: italic;
+}
+
+/* Code Examples
+   ========================================================================== */
+
+.sentinel-config-examples {
+    margin-top: 24px;
+}
+
+.sentinel-config-examples h3 {
+    font-size: 14px;
+    margin: 20px 0 8px;
+}
+
+.sentinel-code-block {
+    background: #2c3338;
+    color: #e0e0e0;
+    padding: 16px 20px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 8px 0 16px;
+    font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+}
+
+/* Loading spinner for AJAX refresh */
+.sentinel-log-loading {
+    text-align: center;
+    padding: 20px;
+    color: #646970;
+}
+
+.sentinel-log-loading .spinner {
+    float: none;
+    visibility: visible;
+    margin: 0 8px 0 0;
+    vertical-align: middle;
+}

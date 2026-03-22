@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Sentinel\Admin\DashboardWidget;
+use Sentinel\Admin\LogViewerPage;
 use Sentinel\Logger\HasLogger;
 
 /**
@@ -41,9 +42,10 @@ class Plugin
 
         self::logInfo('Sentinel initialising', ['version' => SENTINEL_VERSION]);
 
-        // Initialize the dashboard widget (admin only)
+        // Initialize the dashboard widget and log viewer (admin only)
         if (is_admin()) {
             DashboardWidget::init();
+            LogViewerPage::init();
         }
 
         self::logDebug('Sentinel initialised');
