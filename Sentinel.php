@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 1.0.5
+ * Version: 1.1.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * Author: The Bleeding Deacons
@@ -55,11 +55,13 @@ spl_autoload_register(function ($class) {
             require $file;
         }
     } catch (\Exception $e) {
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Autoloader Error: ' . $e->getMessage());
+        function_exists('wp_log')
+            ? wp_log('sentinel')->error('Sentinel Autoloader Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            : error_log('Sentinel Autoloader Error: ' . $e->getMessage());
     } catch (\Throwable $e) {
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Autoloader Fatal Error: ' . $e->getMessage());
+        function_exists('wp_log')
+            ? wp_log('sentinel')->critical('Sentinel Autoloader Fatal Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            : error_log('Sentinel Autoloader Fatal Error: ' . $e->getMessage());
     }
 });
 
@@ -71,10 +73,9 @@ add_action('plugins_loaded', function (): void {
         do_action('sentinel/loaded');
 
     } catch (\Exception $e) {
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Plugin Initialization Error: ' . $e->getMessage());
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Plugin Stack Trace: ' . $e->getTraceAsString());
+        function_exists('wp_log')
+            ? wp_log('sentinel')->error('Sentinel Plugin Initialization Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            : error_log('Sentinel Plugin Initialization Error: ' . $e->getMessage());
 
         if (is_admin()) {
             add_action('admin_notices', function () use ($e) {
@@ -87,10 +88,9 @@ add_action('plugins_loaded', function (): void {
         }
 
     } catch (\Throwable $e) {
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Plugin Fatal Error: ' . $e->getMessage());
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-        error_log('Sentinel Plugin Stack Trace: ' . $e->getTraceAsString());
+        function_exists('wp_log')
+            ? wp_log('sentinel')->critical('Sentinel Plugin Fatal Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            : error_log('Sentinel Plugin Fatal Error: ' . $e->getMessage());
 
         if (is_admin()) {
             add_action('admin_notices', function () {
@@ -99,6 +99,13 @@ add_action('plugins_loaded', function (): void {
         }
     }
 }, 5); // Priority 5: load early so hooks below can fire
+
+// Keep the deployed logger in sync when Sentinel is updated
+add_action('admin_init', function (): void {
+    if (!\Sentinel\Logger\LoggerManager::isCurrentVersion()) {
+        \Sentinel\Logger\LoggerManager::deploy();
+    }
+});
 
 // Listen for each monitored plugin's loaded action to refresh status
 $sentinel_plugin_hooks = [
@@ -124,8 +131,9 @@ add_action('deactivated_plugin', function (string $plugin): void {
     do_action('sentinel/plugin_status_changed', $plugin);
 });
 
-// Activation hook
+// Activation hook — deploy shared logger to mu-plugins/
 register_activation_hook(__FILE__, function (): void {
+    \Sentinel\Logger\LoggerManager::deploy();
     flush_rewrite_rules();
 });
 
