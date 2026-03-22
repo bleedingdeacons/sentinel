@@ -100,12 +100,89 @@ add_action('plugins_loaded', function (): void {
     }
 }, 5); // Priority 5: load early so hooks below can fire
 
-// Keep the deployed logger in sync when Sentinel is updated
-add_action('admin_init', function (): void {
+// Keep the deployed logger in sync when Sentinel is updated.
+// Runs on every request type (admin, CLI, cron, front) so WP-CLI picks up changes.
+add_action('plugins_loaded', function (): void {
     if (!\Sentinel\Logger\LoggerManager::isCurrentVersion()) {
         \Sentinel\Logger\LoggerManager::deploy();
     }
-});
+}, 1);
+
+// WP-CLI commands
+if (defined('WP_CLI') && WP_CLI) {
+    \WP_CLI::add_command('sentinel deploy-logger', function () {
+        \Sentinel\Logger\LoggerManager::deploy(true);
+        $dest = \Sentinel\Logger\LoggerManager::destinationPath();
+        if (file_exists($dest)) {
+            \WP_CLI::success('Logger deployed to ' . $dest);
+        } else {
+            \WP_CLI::error('Deploy failed — file not found at ' . $dest);
+        }
+    });
+
+    \WP_CLI::add_command('log tail', function ($args, $assoc_args) {
+        if (!function_exists('wp_log')) {
+            \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
+        }
+        $logger  = \BD_Shared_Logger::instance();
+        $lines   = (int) ($assoc_args['lines'] ?? 50);
+        $channel = $assoc_args['channel'] ?? null;
+        $level   = $assoc_args['level'] ?? null;
+        $file    = $logger->getLogFile();
+
+        if (!file_exists($file)) {
+            \WP_CLI::error('Log file not found: ' . $file);
+        }
+
+        $allLines = [];
+        $fp = fopen($file, 'r');
+        if ($fp) {
+            while (($line = fgets($fp)) !== false) {
+                $line = rtrim($line);
+                if (empty($line)) {
+                    continue;
+                }
+                if ($channel && !str_contains($line, "[$channel]")) {
+                    continue;
+                }
+                if ($level && !str_contains($line, '[' . strtoupper($level) . ']')) {
+                    continue;
+                }
+                $allLines[] = $line;
+            }
+            fclose($fp);
+        }
+
+        $output = array_slice($allLines, -$lines);
+        if (empty($output)) {
+            \WP_CLI::log('(no matching log entries)');
+            return;
+        }
+        foreach ($output as $line) {
+            \WP_CLI::log($line);
+        }
+    });
+
+    \WP_CLI::add_command('log clear', function () {
+        if (!function_exists('wp_log')) {
+            \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
+        }
+        $file = \BD_Shared_Logger::instance()->getLogFile();
+        if (file_exists($file)) {
+            file_put_contents($file, '');
+            \WP_CLI::success('Log file cleared.');
+        } else {
+            \WP_CLI::warning('No log file found.');
+        }
+    });
+
+    \WP_CLI::add_command('log path', function () {
+        if (!function_exists('wp_log')) {
+            \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
+        }
+        \WP_CLI::log(\BD_Shared_Logger::instance()->getLogFile());
+    });
+}
 
 // Listen for each monitored plugin's loaded action to refresh status
 $sentinel_plugin_hooks = [
