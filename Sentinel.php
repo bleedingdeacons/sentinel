@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 /**
  * Plugin Name: Sentinel
- * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 1.2.0
+ * Description: Intergroup plugins Dashboard and Shared Logger.
+ * Version: 1.3.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * Author: The Bleeding Deacons
@@ -124,49 +124,58 @@ if (defined('WP_CLI') && WP_CLI) {
         if (!function_exists('wp_log')) {
             \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
         }
-        $logger  = \BD_Shared_Logger::instance();
-        $lines   = (int) ($assoc_args['lines'] ?? 50);
+
+        global $wpdb;
+        $table   = \Sentinel_Logger::tableName();
+        $limit   = (int) ($assoc_args['lines'] ?? 50);
         $channel = $assoc_args['channel'] ?? null;
         $level   = $assoc_args['level'] ?? null;
-        $file    = $logger->getLogFile();
 
-        if (!file_exists($file)) {
-            \WP_CLI::error('Log file not found: ' . $file);
+        $where = [];
+        $values = [];
+        if ($channel) {
+            $where[]  = 'channel = %s';
+            $values[] = $channel;
+        }
+        if ($level) {
+            $where[]  = 'level = %s';
+            $values[] = strtolower($level);
         }
 
-        $allLines = [];
-        $fp = fopen($file, 'r');
-        if ($fp) {
-            while (($line = fgets($fp)) !== false) {
-                $line = rtrim($line);
-                if (empty($line)) {
-                    continue;
-                }
-                if ($channel && !str_contains($line, "[$channel]")) {
-                    continue;
-                }
-                if ($level && !str_contains($line, '[' . strtoupper($level) . ']')) {
-                    continue;
-                }
-                $allLines[] = $line;
-            }
-            fclose($fp);
+        $sql = "SELECT * FROM {$table}";
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
         }
+        $sql .= " ORDER BY id DESC LIMIT %d";
+        $values[] = $limit;
 
-        $output = array_slice($allLines, -$lines);
-        if (empty($output)) {
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $rows = $wpdb->get_results($wpdb->prepare($sql, ...$values));
+
+        if (!$rows) {
             \WP_CLI::log('(no matching log entries)');
             return;
         }
-        // Log format: [timestamp] [LEVEL] [channel] [type] [req:id] [mem:size] message {context}
-        $pattern = '/^(\[[^\]]+\]\s+\[[^\]]+\]\s+\[[^\]]+\]\s+\[[^\]]+\]\s+\[req:[^\]]+\]\s+\[mem:[^\]]+\])\s+(.*)$/';
-        foreach ($output as $line) {
-            if (preg_match($pattern, $line, $m)) {
-                \WP_CLI::log($m[1]);
-                \WP_CLI::log($m[2]);
-            } else {
-                \WP_CLI::log($line);
+
+        // Display oldest-first
+        $rows = array_reverse($rows);
+
+        foreach ($rows as $row) {
+            $meta = sprintf(
+                '[%s] [%s] [%s] [%s] [req:%s] [mem:%s]',
+                $row->logged_at,
+                strtoupper($row->level),
+                $row->channel,
+                $row->request_type,
+                $row->request_id,
+                $row->memory
+            );
+            \WP_CLI::log($meta);
+            $msg = $row->message;
+            if (!empty($row->context)) {
+                $msg .= ' ' . $row->context;
             }
+            \WP_CLI::log($msg);
             \WP_CLI::log('');
         }
     });
@@ -175,20 +184,27 @@ if (defined('WP_CLI') && WP_CLI) {
         if (!function_exists('wp_log')) {
             \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
         }
-        $file = \BD_Shared_Logger::instance()->getLogFile();
-        if (file_exists($file)) {
-            file_put_contents($file, '');
-            \WP_CLI::success('Log file cleared.');
-        } else {
-            \WP_CLI::warning('No log file found.');
-        }
+        \Sentinel_Logger::truncateTable();
+        \WP_CLI::success('Log table cleared.');
     });
 
-    \WP_CLI::add_command('log path', function () {
+    \WP_CLI::add_command('log table', function () {
         if (!function_exists('wp_log')) {
             \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
         }
-        \WP_CLI::log(\BD_Shared_Logger::instance()->getLogFile());
+        \WP_CLI::log(\Sentinel_Logger::tableName());
+    });
+
+    \WP_CLI::add_command('log flush', function () {
+        if (!function_exists('wp_log')) {
+            \WP_CLI::error('Shared logger not deployed. Run: wp sentinel deploy-logger');
+        }
+        $count = \Sentinel_Logger::instance()->flush();
+        if ($count > 0) {
+            \WP_CLI::success(sprintf('Flushed %d buffered log entries to the database.', $count));
+        } else {
+            \WP_CLI::log('Buffer is empty — nothing to flush.');
+        }
     });
 }
 

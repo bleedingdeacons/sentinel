@@ -4,7 +4,7 @@
 
 Sentinel adds a WordPress admin dashboard widget that monitors the health of the Intergroup plugin suite — Unity, Scrutiny, Integrity, Concordance, and Amber. It shows each plugin's version and active/inactive status at a glance, with automatic AJAX refresh when plugins are activated or deactivated.
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Requires:** WordPress 6.0+ · PHP 8.1+
 **License:** MIT (Modified — see [License](#license))
 **Author:** [The Bleeding Deacons](mailto:thebleedingdeacons@gmail.com)
@@ -75,23 +75,63 @@ The widget listens for the `unity/loaded`, `scrutiny_loaded`, `integrity_loaded`
 
 ## Architecture
 
-Sentinel is intentionally minimal — a single dashboard widget backed by a thin plugin bootstrap.
+Sentinel is intentionally minimal — a dashboard widget backed by a thin plugin bootstrap and a shared PSR-3 logger that writes to a dedicated database table (`wp_sentinel_log_entries`).
 
 ```
 sentinel/
-├── Sentinel.php                     # Plugin bootstrap & hook registration
+├── Sentinel.php                     # Plugin bootstrap, hook registration & WP-CLI commands
 ├── composer.json                    # Dependencies & PSR-4 autoloading
 ├── build.php                        # Cross-platform build/packaging script
+├── uninstall.php                    # Cleanup on plugin deletion
 ├── assets/
 │   ├── dashboard.css                # Widget styles
-│   └── dashboard.js                 # AJAX refresh logic
+│   ├── dashboard.js                 # AJAX refresh logic
+│   ├── log-viewer.css               # Log viewer page styles
+│   └── log-viewer.js                # Log viewer AJAX refresh
 └── src/
     ├── Plugin.php                   # Initialisation (admin-only)
-    └── Admin/
-        └── DashboardWidget.php      # Widget registration, rendering & AJAX endpoint
+    ├── Admin/
+    │   ├── DashboardWidget.php      # Widget registration, rendering & AJAX endpoint
+    │   ├── LogViewerPage.php        # Tools → Sentinel Logs admin page
+    │   └── SettingsPage.php         # Settings → Sentinel options page
+    └── Logger/
+        ├── sentinel-logger.php     # Shared mu-plugin (deployed to mu-plugins/)
+        ├── HasLogger.php            # Convenience trait for other plugins
+        └── LoggerManager.php        # Deploy/remove lifecycle for the mu-plugin
 ```
 
-The `DashboardWidget` class maintains a static registry of monitored plugins (file paths and labels) and reads their status via `is_plugin_active()` and `get_plugin_data()`.
+### Logging
+
+The shared logger (`sentinel-logger.php`) is deployed as a must-use plugin and stores all log entries in the `{prefix}_sentinel_log_entries` database table.
+
+Log entries are buffered in memory during each request and flushed to the database in a single bulk INSERT — either when the buffer is full, at shutdown, or via a manual flush. This reduces per-entry DB overhead significantly.
+
+Key configuration constants for `wp-config.php`:
+
+| Constant | Default | Description |
+|---|---|---|
+| `SENTINEL_LOG_ENABLED` | `true` | Master on/off switch |
+| `SENTINEL_LOG_LEVEL` | `debug` | Minimum severity to record |
+| `SENTINEL_LOG_MAX_ROWS` | `10000` | Max rows kept (oldest pruned automatically) |
+| `SENTINEL_LOG_BUFFER_SIZE` | `50` | Entries buffered in memory before auto-flushing to DB |
+
+**WP-CLI commands:**
+
+```bash
+wp sentinel deploy-logger   # Deploy/update the mu-plugin
+wp log tail                 # Show recent entries (--lines=50 --channel=unity --level=error)
+wp log clear                # Truncate the log table
+wp log table                # Print the full table name
+wp log flush                # Flush the in-memory buffer to the database immediately
+```
+
+### Settings
+
+Navigate to **Settings → Sentinel** to configure uninstall behaviour:
+
+| Option | Default | Description |
+|---|---|---|
+| Drop log table on uninstall | **Off** | When checked, deleting Sentinel from the Plugins page will also drop the `sentinel_log_entries` table and all stored entries. When unchecked (the default), the table is preserved so other Bleeding Deacons plugins can continue to use it. |
 
 ---
 

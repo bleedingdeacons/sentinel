@@ -28,8 +28,8 @@ use function wp_verify_nonce;
 /**
  * Class LogViewerPage
  *
- * Registers a WordPress admin page under Settings that displays
- * aggregated log entries from the shared logger. Entries are grouped
+ * Registers a WordPress admin page under Tools that displays
+ * aggregated log entries from the database table. Entries are grouped
  * by channel + level with counts, and the page provides a "Clear Log"
  * action.
  *
@@ -43,6 +43,7 @@ class LogViewerPage
     private const PAGE_TITLE   = 'Sentinel Log Viewer';
     private const CAPABILITY   = 'manage_options';
     private const CLEAR_ACTION = 'sentinel_clear_log';
+    private const FLUSH_ACTION = 'sentinel_flush_log';
     private const AJAX_ACTION  = 'sentinel_log_viewer_refresh';
 
     /**
@@ -52,12 +53,13 @@ class LogViewerPage
     {
         add_action('admin_menu', [self::class, 'registerPage']);
         add_action('admin_init', [self::class, 'handleClearAction']);
+        add_action('admin_init', [self::class, 'handleFlushAction']);
         add_action('admin_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_action('wp_ajax_' . self::AJAX_ACTION, [self::class, 'ajaxRefresh']);
     }
 
     /**
-     * Register the admin page under Settings.
+     * Register the admin page under Tools.
      */
     public static function registerPage(): void
     {
@@ -116,14 +118,42 @@ class LogViewerPage
 
         check_admin_referer(self::CLEAR_ACTION, '_sentinel_nonce');
 
-        $logFile = self::getLogFilePath();
-        if ($logFile && file_exists($logFile)) {
-            file_put_contents($logFile, '');
+        if (class_exists('Sentinel_Logger')) {
+            \Sentinel_Logger::truncateTable();
         }
 
         wp_safe_redirect(
             add_query_arg(
                 ['page' => self::PAGE_SLUG, 'cleared' => '1'],
+                admin_url('tools.php')
+            )
+        );
+        exit;
+    }
+
+    /**
+     * Handle the "Flush Buffer" POST action.
+     */
+    public static function handleFlushAction(): void
+    {
+        if (!isset($_POST['sentinel_flush_log'])) {
+            return;
+        }
+
+        if (!current_user_can(self::CAPABILITY)) {
+            wp_die(esc_html__('Unauthorized', 'sentinel'));
+        }
+
+        check_admin_referer(self::FLUSH_ACTION, '_sentinel_flush_nonce');
+
+        $flushed = 0;
+        if (function_exists('wp_log_flush')) {
+            $flushed = wp_log_flush();
+        }
+
+        wp_safe_redirect(
+            add_query_arg(
+                ['page' => self::PAGE_SLUG, 'flushed' => (string) $flushed],
                 admin_url('tools.php')
             )
         );
@@ -149,107 +179,90 @@ class LogViewerPage
     }
 
     /**
-     * Get the log file path from the shared logger.
+     * Check whether the log table exists and has rows.
      */
-    private static function getLogFilePath(): ?string
+    private static function tableExists(): bool
     {
-        if (!class_exists('BD_Shared_Logger')) {
-            return null;
+        global $wpdb;
+        if (!class_exists('Sentinel_Logger')) {
+            return false;
         }
-
-        return \BD_Shared_Logger::instance()->getLogFile();
+        $table = \Sentinel_Logger::tableName();
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        return $wpdb->get_var("SHOW TABLES LIKE '{$table}'") === $table;
     }
 
     /**
-     * Parse the log file and return aggregate data.
+     * Query the database and return aggregate data.
      *
      * @return array{
-     *     aggregates: array<string, array{channel: string, level: string, count: int, last_seen: string, last_message: string}>,
-     *     total_lines: int,
-     *     file_size: int,
-     *     file_path: string|null
+     *     aggregates: list<array{channel: string, level: string, count: int, last_seen: string, last_message: string, first_seen: string}>,
+     *     total_rows: int,
+     *     table_name: string|null
      * }
      */
     private static function getAggregateData(): array
     {
-        $logFile = self::getLogFilePath();
-
         $result = [
-            'aggregates'  => [],
-            'total_lines' => 0,
-            'file_size'   => 0,
-            'file_path'   => $logFile,
+            'aggregates' => [],
+            'total_rows' => 0,
+            'table_name' => null,
         ];
 
-        if (!$logFile || !file_exists($logFile)) {
+        if (!self::tableExists()) {
             return $result;
         }
 
-        $result['file_size'] = (int) filesize($logFile);
+        global $wpdb;
+        $table = \Sentinel_Logger::tableName();
+        $result['table_name'] = $table;
 
-        $fp = fopen($logFile, 'r');
-        if (!$fp) {
+        // Total row count
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $result['total_rows'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+
+        if ($result['total_rows'] === 0) {
             return $result;
         }
 
-        // Pattern: [timestamp] [LEVEL] [channel] [type] [req:id] [mem:size] message {context}
-        $pattern = '/^\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[req:([^\]]+)\]\s+\[mem:([^\]]+)\]\s+(.*)$/';
+        // Aggregate by channel + level, keeping last message and timestamps
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $rows = $wpdb->get_results("
+            SELECT
+                channel,
+                level,
+                COUNT(*)            AS cnt,
+                MIN(logged_at)      AS first_seen,
+                MAX(logged_at)      AS last_seen
+            FROM {$table}
+            GROUP BY channel, level
+            ORDER BY
+                FIELD(level, 'emergency','alert','critical','error','warning','notice','info','debug'),
+                cnt DESC
+        ");
 
-        while (($line = fgets($fp)) !== false) {
-            $line = rtrim($line);
-            if (empty($line)) {
-                continue;
-            }
-
-            $result['total_lines']++;
-
-            if (!preg_match($pattern, $line, $matches)) {
-                continue;
-            }
-
-            $timestamp = $matches[1];
-            $level     = strtolower($matches[2]);
-            $channel   = $matches[3];
-            $message   = $matches[7];
-
-            // Strip JSON context from end of message for grouping
-            $msgKey = preg_replace('/\s+\{.*\}$/', '', $message);
-            // Normalise variable parts (request IDs, timestamps, etc.) for better grouping
-            $msgKey = preg_replace('/[0-9a-f]{8,}/', '{id}', $msgKey);
-
-            $groupKey = $channel . '|' . $level . '|' . $msgKey;
-
-            if (!isset($result['aggregates'][$groupKey])) {
-                $result['aggregates'][$groupKey] = [
-                    'channel'      => $channel,
-                    'level'        => $level,
-                    'count'        => 0,
-                    'last_seen'    => $timestamp,
-                    'last_message' => $message,
-                    'first_seen'   => $timestamp,
-                ];
-            }
-
-            $result['aggregates'][$groupKey]['count']++;
-            $result['aggregates'][$groupKey]['last_seen']    = $timestamp;
-            $result['aggregates'][$groupKey]['last_message'] = $message;
+        if (!$rows) {
+            return $result;
         }
 
-        fclose($fp);
+        foreach ($rows as $row) {
+            // Fetch the most recent message for this group
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $lastMessage = $wpdb->get_var($wpdb->prepare(
+                "SELECT message FROM {$table} WHERE channel = %s AND level = %s ORDER BY id DESC LIMIT 1",
+                $row->channel,
+                $row->level
+            ));
 
-        // Sort: highest count first, then by last_seen descending
-        uasort($result['aggregates'], function ($a, $b) {
-            $levelPriority = [
-                'emergency' => 0, 'alert' => 1, 'critical' => 2, 'error' => 3,
-                'warning' => 4, 'notice' => 5, 'info' => 6, 'debug' => 7,
+            $result['aggregates'][] = [
+                'channel'      => $row->channel,
+                'level'        => $row->level,
+                'count'        => (int) $row->cnt,
+                'first_seen'   => $row->first_seen,
+                'last_seen'    => $row->last_seen,
+                'last_message' => $lastMessage ?: '',
             ];
-            $aP = $levelPriority[$a['level']] ?? 7;
-            $bP = $levelPriority[$b['level']] ?? 7;
-            if ($aP !== $bP) {
-                return $aP - $bP;
-            }
-            return $b['count'] - $a['count'];
-        });
+        }
 
         return $result;
     }
@@ -263,46 +276,37 @@ class LogViewerPage
     {
         $config = [];
 
-        // BD_LOG_ENABLED
-        $config['BD_LOG_ENABLED'] = [
-            'value'       => defined('BD_LOG_ENABLED') ? (BD_LOG_ENABLED ? 'true' : 'false') : '(not set — default: true)',
-            'source'      => defined('BD_LOG_ENABLED') ? 'wp-config.php' : 'default',
+        // SENTINEL_LOG_ENABLED
+        $config['SENTINEL_LOG_ENABLED'] = [
+            'value'       => defined('SENTINEL_LOG_ENABLED') ? (SENTINEL_LOG_ENABLED ? 'true' : 'false') : '(not set — default: true)',
+            'source'      => defined('SENTINEL_LOG_ENABLED') ? 'wp-config.php' : 'default',
             'description' => 'Master switch. Set to false to disable all logging.',
-            'example'     => "define( 'BD_LOG_ENABLED', false );",
+            'example'     => "define( 'SENTINEL_LOG_ENABLED', false );",
         ];
 
-        // BD_LOG_LEVEL
-        $config['BD_LOG_LEVEL'] = [
-            'value'       => defined('BD_LOG_LEVEL') ? BD_LOG_LEVEL : '(not set — default: debug)',
-            'source'      => defined('BD_LOG_LEVEL') ? 'wp-config.php' : 'default',
+        // SENTINEL_LOG_LEVEL
+        $config['SENTINEL_LOG_LEVEL'] = [
+            'value'       => defined('SENTINEL_LOG_LEVEL') ? SENTINEL_LOG_LEVEL : '(not set — default: debug)',
+            'source'      => defined('SENTINEL_LOG_LEVEL') ? 'wp-config.php' : 'default',
             'description' => 'Minimum severity to record. Messages below this level are discarded.',
-            'example'     => "define( 'BD_LOG_LEVEL', 'warning' );",
+            'example'     => "define( 'SENTINEL_LOG_LEVEL', 'warning' );",
             'options'     => 'emergency, alert, critical, error, warning, notice, info, debug',
         ];
 
-        // BD_LOG_DIR
-        $config['BD_LOG_DIR'] = [
-            'value'       => defined('BD_LOG_DIR') ? BD_LOG_DIR : '(not set — default: wp-content/logs)',
-            'source'      => defined('BD_LOG_DIR') ? 'wp-config.php' : 'default',
-            'description' => 'Directory where log files are written.',
-            'example'     => "define( 'BD_LOG_DIR', '/var/log/wordpress' );",
+        // SENTINEL_LOG_MAX_ROWS
+        $config['SENTINEL_LOG_MAX_ROWS'] = [
+            'value'       => defined('SENTINEL_LOG_MAX_ROWS') ? number_format(SENTINEL_LOG_MAX_ROWS) : '(not set — default: 10,000)',
+            'source'      => defined('SENTINEL_LOG_MAX_ROWS') ? 'wp-config.php' : 'default',
+            'description' => 'Maximum number of rows kept in the log table. Oldest entries are pruned automatically.',
+            'example'     => "define( 'SENTINEL_LOG_MAX_ROWS', 25000 );",
         ];
 
-        // BD_LOG_MAX_SIZE
-        $defaultSize = '5 MB';
-        $config['BD_LOG_MAX_SIZE'] = [
-            'value'       => defined('BD_LOG_MAX_SIZE') ? size_format(BD_LOG_MAX_SIZE) : '(not set — default: ' . $defaultSize . ')',
-            'source'      => defined('BD_LOG_MAX_SIZE') ? 'wp-config.php' : 'default',
-            'description' => 'Maximum size of a single log file before rotation (in bytes).',
-            'example'     => "define( 'BD_LOG_MAX_SIZE', 10 * 1024 * 1024 ); // 10 MB",
-        ];
-
-        // BD_LOG_MAX_FILES
-        $config['BD_LOG_MAX_FILES'] = [
-            'value'       => defined('BD_LOG_MAX_FILES') ? BD_LOG_MAX_FILES : '(not set — default: 5)',
-            'source'      => defined('BD_LOG_MAX_FILES') ? 'wp-config.php' : 'default',
-            'description' => 'Number of rotated log files to keep.',
-            'example'     => "define( 'BD_LOG_MAX_FILES', 3 );",
+        // SENTINEL_LOG_BUFFER_SIZE
+        $config['SENTINEL_LOG_BUFFER_SIZE'] = [
+            'value'       => defined('SENTINEL_LOG_BUFFER_SIZE') ? number_format(SENTINEL_LOG_BUFFER_SIZE) : '(not set — default: 50)',
+            'source'      => defined('SENTINEL_LOG_BUFFER_SIZE') ? 'wp-config.php' : 'default',
+            'description' => 'Number of entries held in the in-memory buffer before auto-flushing to the database. Lower values mean more frequent writes; higher values reduce DB round-trips.',
+            'example'     => "define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );",
         ];
 
         return $config;
@@ -313,7 +317,7 @@ class LogViewerPage
      */
     public static function renderAggregateTable(): void
     {
-        $data = self::getAggregateData();
+        $data       = self::getAggregateData();
         $aggregates = $data['aggregates'];
 
         if (empty($aggregates)) {
@@ -327,16 +331,12 @@ class LogViewerPage
         ?>
         <div class="sentinel-log-summary">
             <span class="sentinel-log-stat">
-                <strong><?php echo esc_html(number_format($data['total_lines'])); ?></strong>
+                <strong><?php echo esc_html(number_format($data['total_rows'])); ?></strong>
                 <?php esc_html_e('total entries', 'sentinel'); ?>
             </span>
             <span class="sentinel-log-stat">
-                <strong><?php echo esc_html(count($aggregates)); ?></strong>
-                <?php esc_html_e('unique messages', 'sentinel'); ?>
-            </span>
-            <span class="sentinel-log-stat">
-                <strong><?php echo esc_html(size_format($data['file_size'])); ?></strong>
-                <?php esc_html_e('file size', 'sentinel'); ?>
+                <strong><?php echo esc_html((string) count($aggregates)); ?></strong>
+                <?php esc_html_e('unique groups', 'sentinel'); ?>
             </span>
         </div>
 
@@ -387,10 +387,13 @@ class LogViewerPage
             wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'sentinel'));
         }
 
-        $logFile = self::getLogFilePath();
         $config  = self::getLoggingConfig();
         $cleared = isset($_GET['cleared']) && $_GET['cleared'] === '1';
-        $loggerDeployed = class_exists('BD_Shared_Logger');
+        $flushed = isset($_GET['flushed']) ? (int) $_GET['flushed'] : -1;
+        $loggerDeployed = class_exists('Sentinel_Logger');
+        $tableExists    = self::tableExists();
+        $data           = self::getAggregateData();
+        $bufferCount    = $loggerDeployed ? \Sentinel_Logger::instance()->bufferCount() : 0;
 
         ?>
         <div class="wrap">
@@ -398,7 +401,24 @@ class LogViewerPage
 
             <?php if ($cleared): ?>
                 <div class="notice notice-success is-dismissible">
-                    <p><?php esc_html_e('Log file cleared successfully.', 'sentinel'); ?></p>
+                    <p><?php esc_html_e('Log table cleared successfully.', 'sentinel'); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($flushed >= 0): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p>
+                        <?php
+                        if ($flushed > 0) {
+                            printf(
+                                esc_html__('Flushed %d buffered entries to the database.', 'sentinel'),
+                                $flushed
+                            );
+                        } else {
+                            esc_html_e('Buffer was empty — nothing to flush.', 'sentinel');
+                        }
+                        ?>
+                    </p>
                 </div>
             <?php endif; ?>
 
@@ -421,14 +441,35 @@ class LogViewerPage
                             <span class="dashicons dashicons-update" style="vertical-align: middle; margin-top: -2px;"></span>
                             <?php esc_html_e('Refresh', 'sentinel'); ?>
                         </button>
-                        <?php if ($logFile && file_exists($logFile) && filesize($logFile) > 0): ?>
+                        <?php if ($loggerDeployed): ?>
+                            <form method="post" style="display: inline;">
+                                <?php wp_nonce_field(self::FLUSH_ACTION, '_sentinel_flush_nonce'); ?>
+                                <button type="submit"
+                                        name="sentinel_flush_log"
+                                        value="1"
+                                        class="button"
+                                        title="<?php echo esc_attr(sprintf(
+                                            __('%d entries currently buffered in memory', 'sentinel'),
+                                            $bufferCount
+                                        )); ?>">
+                                    <span class="dashicons dashicons-database-export" style="vertical-align: middle; margin-top: -2px;"></span>
+                                    <?php
+                                    printf(
+                                        esc_html__('Flush Buffer (%d)', 'sentinel'),
+                                        $bufferCount
+                                    );
+                                    ?>
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                        <?php if ($tableExists && $data['total_rows'] > 0): ?>
                             <form method="post" style="display: inline;">
                                 <?php wp_nonce_field(self::CLEAR_ACTION, '_sentinel_nonce'); ?>
                                 <button type="submit"
                                         name="sentinel_clear_log"
                                         value="1"
                                         class="button button-secondary sentinel-clear-btn"
-                                        onclick="return confirm('<?php echo esc_attr__('Are you sure you want to clear the entire log file? This cannot be undone.', 'sentinel'); ?>');">
+                                        onclick="return confirm('<?php echo esc_attr__('Are you sure you want to clear all log entries? This cannot be undone.', 'sentinel'); ?>');">
                                     <span class="dashicons dashicons-trash" style="vertical-align: middle; margin-top: -2px;"></span>
                                     <?php esc_html_e('Clear Log', 'sentinel'); ?>
                                 </button>
@@ -437,10 +478,10 @@ class LogViewerPage
                     </div>
                 </div>
 
-                <?php if ($logFile): ?>
+                <?php if ($data['table_name']): ?>
                     <p class="description">
-                        <?php esc_html_e('Log file:', 'sentinel'); ?>
-                        <code><?php echo esc_html($logFile); ?></code>
+                        <?php esc_html_e('Database table:', 'sentinel'); ?>
+                        <code><?php echo esc_html($data['table_name']); ?></code>
                     </p>
                 <?php endif; ?>
 
@@ -519,15 +560,25 @@ class LogViewerPage
                     </p>
                     <pre class="sentinel-code-block"><?php echo esc_html(
 "// Set minimum log level via filter
-add_filter( 'bd_logger_level', function () {
+add_filter( 'sentinel_logger_level', function () {
     return 'warning';
 });
 
 // Disable logging via filter
-add_filter( 'bd_logger_enabled', '__return_false' );
+add_filter( 'sentinel_logger_enabled', '__return_false' );
+
+// Set max rows via filter
+add_filter( 'sentinel_logger_max_rows', function () {
+    return 25000;
+});
+
+// Set in-memory buffer size via filter
+add_filter( 'sentinel_logger_buffer_size', function () {
+    return 100;
+});
 
 // Suppress or modify individual entries
-add_filter( 'bd_logger_entry', function ( \$entry, \$channel ) {
+add_filter( 'sentinel_logger_entry', function ( \$entry, \$channel ) {
     // Suppress all debug entries from the 'unity' channel
     if ( \$channel === 'unity' && \$entry['level'] === 'debug' ) {
         return null;

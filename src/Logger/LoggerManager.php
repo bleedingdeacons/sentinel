@@ -11,16 +11,16 @@ if (!defined('ABSPATH')) {
 /**
  * Manages the lifecycle of the shared logger mu-plugin.
  *
- * - activate()   → copies bd-shared-logger.php into mu-plugins/
- * - deactivate() → (no-op — logger stays for other plugins)
- * - uninstall()  → removes logger from mu-plugins/ and optionally cleans logs
+ * - deploy()    → copies sentinel-logger.php into mu-plugins/
+ * - remove()    → removes logger from mu-plugins/
+ * - cleanLogs() → drops the database table
  */
 class LoggerManager
 {
     /**
      * Filename of the mu-plugin.
      */
-    private const MU_FILENAME = 'bd-shared-logger.php';
+    private const MU_FILENAME = 'sentinel-logger.php';
 
     /**
      * Get the source path (bundled inside Sentinel).
@@ -75,6 +75,13 @@ class LoggerManager
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
             error_log('Sentinel: Failed to deploy logger to ' . $dest);
         }
+
+        // Ensure the database table exists after deploying the mu-plugin.
+        // The mu-plugin creates it lazily, but we force it here so the
+        // table is ready immediately after activation or update.
+        if (class_exists('Sentinel_Logger')) {
+            \Sentinel_Logger::createTable();
+        }
     }
 
     /**
@@ -114,32 +121,24 @@ class LoggerManager
     }
 
     /**
-     * Remove log files created by the logger.
+     * Remove log data created by the logger.
      *
-     * Optional — call from uninstall.php for a full cleanup.
+     * Drops the database table and removes the schema version option.
+     * Called from uninstall.php for a full cleanup.
      */
     public static function cleanLogs(): void
     {
-        $logDir = defined('BD_LOG_DIR')
-            ? untrailingslashit(BD_LOG_DIR)
-            : untrailingslashit(WP_CONTENT_DIR) . '/logs';
-
-        if (!is_dir($logDir)) {
+        if (class_exists('Sentinel_Logger')) {
+            \Sentinel_Logger::dropTable();
             return;
         }
 
-        // Only remove files created by our logger
-        $pattern = $logDir . '/bd-shared.log*';
-        foreach (glob($pattern) as $file) {
-            @unlink($file);
-        }
-
-        // Remove .htaccess and index.php if the directory is now empty
-        $remaining = array_diff(scandir($logDir), ['.', '..', '.htaccess', 'index.php']);
-        if (empty($remaining)) {
-            @unlink($logDir . '/.htaccess');
-            @unlink($logDir . '/index.php');
-            @rmdir($logDir);
-        }
+        // Fallback: if the mu-plugin has already been removed and the class
+        // isn't available, drop the table directly.
+        global $wpdb;
+        $table = $wpdb->prefix . 'sentinel_log_entries';
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $wpdb->query("DROP TABLE IF EXISTS {$table}");
+        delete_option('sentinel_logger_db_version');
     }
 }

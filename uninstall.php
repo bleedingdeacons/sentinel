@@ -6,7 +6,9 @@ declare(strict_types=1);
  * Sentinel Uninstall Handler
  *
  * Fired when the plugin is deleted via the WordPress admin.
- * Removes the shared logger mu-plugin and optionally cleans up log files.
+ * Always removes the shared logger mu-plugin.
+ * Only drops the log database table if the user opted in via
+ * Settings → Sentinel → "Drop log table on uninstall".
  */
 
 if (!defined('WP_UNINSTALL_PLUGIN')) {
@@ -23,10 +25,17 @@ if (file_exists($logger_manager)) {
 
     require_once $logger_manager;
 
-    // Remove the mu-plugin
+    // Always remove the mu-plugin file
     \Sentinel\Logger\LoggerManager::remove();
 
-    // Clean up log files
-    // Comment out the line below to preserve logs after uninstall
-    \Sentinel\Logger\LoggerManager::cleanLogs();
+    // Only drop the log table if the admin explicitly opted in.
+    // The option defaults to '' (false / preserve data).
+    $drop = get_option('sentinel_drop_table_on_uninstall', '');
+
+    if ($drop === '1') {
+        \Sentinel\Logger\LoggerManager::cleanLogs();
+    }
+
+    // Clean up our own options regardless
+    delete_option('sentinel_drop_table_on_uninstall');
 }

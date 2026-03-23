@@ -31,7 +31,7 @@ if (!defined('ABSPATH')) {
  */
 trait HasLogger
 {
-    private static ?\BD_Log_Channel $loggerChannel = null;
+    private static ?\Sentinel_Log_Channel $loggerChannel = null;
 
     /**
      * Override this in the consuming class to set the channel name.
@@ -46,7 +46,7 @@ trait HasLogger
     /**
      * Get the log channel instance (or null if logger isn't available).
      */
-    public static function log(): ?\BD_Log_Channel
+    public static function log(): ?\Sentinel_Log_Channel
     {
         if (self::$loggerChannel === null && function_exists('wp_log')) {
             self::$loggerChannel = wp_log(static::logChannel());
