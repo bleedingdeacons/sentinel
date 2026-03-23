@@ -53,7 +53,7 @@
                 var response = JSON.parse(xhr.responseText);
                 if (response.success && response.data && response.data.html) {
                     container.innerHTML = response.data.html;
-                    bindCopyButtons();
+                    bindCopyRows();
                 } else if (!silent) {
                     container.innerHTML =
                         '<div class="notice notice-error"><p>Unexpected response.</p></div>';
@@ -77,8 +77,22 @@
     });
 
     /* Auto-refresh toggle */
+    var STORAGE_KEY = 'sentinel_auto_refresh';
+
+    /* Restore saved state */
     if (autoToggle) {
+        try {
+            if (localStorage.getItem(STORAGE_KEY) === '1') {
+                autoToggle.checked = true;
+                startAutoRefresh();
+            }
+        } catch (e) {}
+
         autoToggle.addEventListener('change', function () {
+            try {
+                localStorage.setItem(STORAGE_KEY, autoToggle.checked ? '1' : '0');
+            } catch (e) {}
+
             if (autoToggle.checked) {
                 startAutoRefresh();
             } else {
@@ -105,62 +119,96 @@
      * Copy entry data to clipboard.
      * Line 1: level \t channel \t count \t last_seen
      * Line 2: message
+     *
+     * If Ctrl (or Cmd) is held, append to an internal buffer and write
+     * all accumulated entries to clipboard. Plain click resets the buffer.
      */
-    function handleCopy(btn) {
-        var row = btn.closest('.sentinel-log-row-header');
-        if (!row) return;
+    var clipBuffer = '';
 
-        var level    = row.getAttribute('data-level')     || '';
-        var channel  = row.getAttribute('data-channel')   || '';
-        var count    = row.getAttribute('data-count')     || '';
-        var lastSeen = row.getAttribute('data-last-seen') || '';
-        var message  = row.getAttribute('data-message')   || '';
+    function handleCopy(group, e) {
+        var level    = group.getAttribute('data-level')     || '';
+        var channel  = group.getAttribute('data-channel')   || '';
+        var count    = group.getAttribute('data-count')     || '';
+        var lastSeen = group.getAttribute('data-last-seen') || '';
+        var message  = group.getAttribute('data-message')   || '';
 
-        var text = level + '\t' + channel + '\t' + count + '\t' + lastSeen + '\n' + message;
+        var newText = level + '\t' + channel + '\t' + count + '\t' + lastSeen + '\n' + message;
+        var append  = e && (e.ctrlKey || e.metaKey);
+
+        if (append && clipBuffer) {
+            clipBuffer = clipBuffer + '\n' + newText;
+        } else {
+            clipBuffer = newText;
+        }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(function () {
-                showCopied(btn);
+            navigator.clipboard.writeText(clipBuffer).then(function () {
+                showCopied(group, append);
             });
         } else {
-            // Fallback
             var ta = document.createElement('textarea');
-            ta.value = text;
+            ta.value = clipBuffer;
             ta.style.position = 'fixed';
             ta.style.opacity = '0';
             document.body.appendChild(ta);
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            showCopied(btn);
+            showCopied(group, append);
         }
     }
 
-    function showCopied(btn) {
-        var icon = btn.querySelector('.dashicons');
-        if (icon) {
-            icon.className = 'dashicons dashicons-yes';
-            setTimeout(function () {
-                icon.className = 'dashicons dashicons-clipboard';
-            }, 1200);
+    /* Toast element – created once, reused */
+    var toast = document.createElement('div');
+    toast.className = 'sentinel-copy-toast';
+    toast.textContent = 'Copied to clipboard';
+    document.body.appendChild(toast);
+    var toastTimer = null;
+    var copyCount = 0;
+
+    function showCopied(group, appended) {
+        group.classList.add('sentinel-copied');
+        setTimeout(function () {
+            group.classList.remove('sentinel-copied');
+        }, 1200);
+
+        /* Track count — reset on plain copy, increment on append */
+        if (appended) {
+            copyCount++;
+        } else {
+            copyCount = 1;
         }
+
+        /* Show toast */
+        if (copyCount > 1) {
+            toast.textContent = 'Copied ' + copyCount + ' items to clipboard';
+        } else {
+            toast.textContent = 'Copied to clipboard';
+        }
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+        }
+        toast.classList.add('sentinel-toast-visible');
+        toastTimer = setTimeout(function () {
+            toast.classList.remove('sentinel-toast-visible');
+            toastTimer = null;
+        }, 1500);
     }
 
     /**
-     * Bind click handlers to all copy buttons in the container.
+     * Bind click handlers to all log groups in the container.
      * Called on page load and after each AJAX refresh.
      */
-    function bindCopyButtons() {
-        var buttons = container.querySelectorAll('.sentinel-copy-btn');
-        buttons.forEach(function (btn) {
-            btn.addEventListener('click', function (e) {
+    function bindCopyRows() {
+        var groups = container.querySelectorAll('.sentinel-log-group');
+        groups.forEach(function (group) {
+            group.addEventListener('click', function (e) {
                 e.preventDefault();
-                e.stopPropagation();
-                handleCopy(btn);
+                handleCopy(group, e);
             });
         });
     }
 
     // Initial bind
-    bindCopyButtons();
+    bindCopyRows();
 })();

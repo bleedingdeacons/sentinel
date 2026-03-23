@@ -327,17 +327,17 @@ class LogViewerPage
                     <th class="sentinel-log-col-channel"><?php esc_html_e('Channel', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-time"><?php esc_html_e('Last Seen', 'sentinel'); ?></th>
-                    <th class="sentinel-log-col-actions"></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($aggregates as $entry): ?>
-                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header"
+                    <tbody class="sentinel-log-group"
                         data-level="<?php echo esc_attr(strtoupper($entry['level'])); ?>"
                         data-channel="<?php echo esc_attr($entry['channel']); ?>"
                         data-count="<?php echo esc_attr(number_format($entry['count'])); ?>"
                         data-last-seen="<?php echo esc_attr($entry['last_seen']); ?>"
                         data-message="<?php echo esc_attr($entry['last_message']); ?>">
+                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
                         <td class="sentinel-log-col-level">
                             <span class="sentinel-badge sentinel-badge--<?php echo esc_attr($entry['level']); ?>">
                                 <?php echo esc_html(strtoupper($entry['level'])); ?>
@@ -352,17 +352,13 @@ class LogViewerPage
                         <td class="sentinel-log-col-time">
                             <span class="sentinel-log-time"><?php echo esc_html($entry['last_seen']); ?></span>
                         </td>
-                        <td class="sentinel-log-col-actions">
-                            <button type="button" class="sentinel-copy-btn" title="<?php esc_attr_e('Copy to clipboard', 'sentinel'); ?>">
-                                <span class="dashicons dashicons-clipboard"></span>
-                            </button>
-                        </td>
                     </tr>
                     <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-message">
-                        <td colspan="5" class="sentinel-log-col-message">
+                        <td colspan="4" class="sentinel-log-col-message">
                             <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
                         </td>
                     </tr>
+                    </tbody>
                 <?php endforeach; ?>
             </tbody>
         </table>

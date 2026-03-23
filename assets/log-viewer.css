@@ -203,57 +203,47 @@
     background-color: #fef8f8 !important;
 }
 
-/* Actions column & Copy button
+/* Clickable row groups – copy on click
    ========================================================================== */
 
-.sentinel-log-col-actions {
-    width: 40px;
-    text-align: center !important;
-    padding: 0 8px !important;
-}
-
-thead .sentinel-log-col-actions {
-    border-bottom: 1px solid #c3c4c7;
-}
-
-.sentinel-copy-btn {
-    display: none;
-    background: none;
-    border: 1px solid #c3c4c7;
-    border-radius: 4px;
+.sentinel-log-group {
     cursor: pointer;
-    padding: 3px 5px;
-    color: #50575e;
-    line-height: 1;
-    vertical-align: middle;
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    transition: outline-color 0.15s;
 }
 
-.sentinel-copy-btn .dashicons {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
+.sentinel-log-group:hover {
+    outline-color: #8c8f94;
 }
 
-.sentinel-copy-btn:hover {
-    color: #2271b1;
-    border-color: #2271b1;
-    background: #f0f7fc;
+/* Copied feedback – green outline */
+.sentinel-log-group.sentinel-copied {
+    outline-color: #00a32a;
 }
 
-/* Show copy button when hovering over the header row or its sibling message row */
-.sentinel-log-row-header:hover .sentinel-copy-btn,
-.sentinel-log-row-message:hover + .sentinel-log-row-header .sentinel-copy-btn {
-    display: inline-block;
+/* Copied toast notification */
+.sentinel-copy-toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #1d2327;
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 100000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    white-space: nowrap;
 }
 
-/* Also show when hovering the message row – target via adjacent sibling on header */
-.sentinel-log-row-header:hover + .sentinel-log-row-message ~ .sentinel-log-row-header .sentinel-copy-btn {
-    display: none;
-}
-
-/* Use JS-assisted hover group approach: show btn on header hover */
-.sentinel-log-row-header:hover .sentinel-copy-btn {
-    display: inline-block;
+.sentinel-copy-toast.sentinel-toast-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 /* Auto-refresh toggle switch
