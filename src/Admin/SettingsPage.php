@@ -130,7 +130,7 @@ class SettingsPage
         </label>
         <p class="description">
             <?php esc_html_e(
-                'When unchecked (the default), the log table is preserved so other Bleeding Deacons plugins can continue to use it.',
+                'When unchecked (the default), the log table is preserved.',
                 'sentinel'
             ); ?>
         </p>

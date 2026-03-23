@@ -67,21 +67,46 @@ class Plugin
     }
 
     /**
-     * Register the top-level Sentinel admin menu.
-     *
-     * The first submenu page (Logs) is registered by LogViewerPage and
-     * replaces the auto-generated duplicate entry.
+     * Register the top-level Sentinel admin menu and schedule
+     * removal of the auto-generated duplicate first submenu entry.
      */
     public static function registerTopLevelMenu(): void
     {
         add_menu_page(
-            __('Sentinel', 'sentinel'),      // page title
-            __('Sentinel', 'sentinel'),      // menu title
+            __('Sentinel', 'sentinel'),
+            __('Sentinel', 'sentinel'),
             self::CAPABILITY,
-            self::MENU_SLUG,                 // slug — LogViewerPage will match this for the first submenu
-            '__return_null',                 // placeholder callback, overridden by the first submenu
-            'dashicons-shield',              // icon
-            80                               // position
+            self::MENU_SLUG,
+            '__return_null',
+            'dashicons-shield',
+            80
         );
+
+        // WordPress auto-creates a submenu item that duplicates the
+        // parent label. Remove it after all admin_menu callbacks have
+        // finished registering their pages.
+        add_action('admin_menu', [self::class, 'removeDuplicateSubmenu'], 999);
+    }
+
+    /**
+     * Remove the auto-generated first submenu that duplicates the
+     * top-level "Sentinel" entry.
+     */
+    public static function removeDuplicateSubmenu(): void
+    {
+        global $submenu;
+
+        if (empty($submenu[self::MENU_SLUG])) {
+            return;
+        }
+
+        foreach ($submenu[self::MENU_SLUG] as $index => $item) {
+            // The auto-generated entry uses the parent slug as both
+            // the menu slug (index 2) and shares the parent capability.
+            if (isset($item[2]) && $item[2] === self::MENU_SLUG) {
+                unset($submenu[self::MENU_SLUG][$index]);
+                break;
+            }
+        }
     }
 }

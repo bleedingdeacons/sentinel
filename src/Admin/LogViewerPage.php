@@ -64,18 +64,15 @@ class LogViewerPage
 
     /**
      * Register the admin page as a submenu under Sentinel.
-     * This is also the first submenu, so it replaces the auto-generated
-     * parent duplicate by using the parent slug as its own slug.
      */
     public static function registerPage(): void
     {
-        // First submenu replaces the auto-generated parent entry.
         self::$hookSuffix = (string) add_submenu_page(
-            Plugin::MENU_SLUG,       // parent slug
+            Plugin::MENU_SLUG,
             self::PAGE_TITLE,
             self::MENU_TITLE,
             self::CAPABILITY,
-            Plugin::MENU_SLUG,       // use parent slug so it becomes the landing page
+            self::PAGE_SLUG,
             [self::class, 'renderPage']
         );
     }
@@ -132,7 +129,7 @@ class LogViewerPage
 
         wp_safe_redirect(
             add_query_arg(
-                ['page' => Plugin::MENU_SLUG, 'cleared' => '1'],
+                ['page' => self::PAGE_SLUG, 'cleared' => '1'],
                 admin_url('admin.php')
             )
         );
