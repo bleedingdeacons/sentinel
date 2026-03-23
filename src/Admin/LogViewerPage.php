@@ -43,7 +43,6 @@ class LogViewerPage
     private const PAGE_TITLE   = 'Sentinel Log Viewer';
     private const CAPABILITY   = 'manage_options';
     private const CLEAR_ACTION = 'sentinel_clear_log';
-    private const FLUSH_ACTION = 'sentinel_flush_log';
     private const AJAX_ACTION  = 'sentinel_log_viewer_refresh';
 
     /**
@@ -53,7 +52,6 @@ class LogViewerPage
     {
         add_action('admin_menu', [self::class, 'registerPage']);
         add_action('admin_init', [self::class, 'handleClearAction']);
-        add_action('admin_init', [self::class, 'handleFlushAction']);
         add_action('admin_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_action('wp_ajax_' . self::AJAX_ACTION, [self::class, 'ajaxRefresh']);
     }
@@ -132,36 +130,8 @@ class LogViewerPage
     }
 
     /**
-     * Handle the "Flush Buffer" POST action.
-     */
-    public static function handleFlushAction(): void
-    {
-        if (!isset($_POST['sentinel_flush_log'])) {
-            return;
-        }
-
-        if (!current_user_can(self::CAPABILITY)) {
-            wp_die(esc_html__('Unauthorized', 'sentinel'));
-        }
-
-        check_admin_referer(self::FLUSH_ACTION, '_sentinel_flush_nonce');
-
-        $flushed = 0;
-        if (function_exists('wp_log_flush')) {
-            $flushed = wp_log_flush();
-        }
-
-        wp_safe_redirect(
-            add_query_arg(
-                ['page' => self::PAGE_SLUG, 'flushed' => (string) $flushed],
-                admin_url('tools.php')
-            )
-        );
-        exit;
-    }
-
-    /**
      * AJAX handler for refreshing log data.
+     * Flushes any buffered entries before querying so the view is up to date.
      */
     public static function ajaxRefresh(): void
     {
@@ -169,6 +139,11 @@ class LogViewerPage
 
         if (!current_user_can(self::CAPABILITY)) {
             wp_send_json_error('Unauthorized', 403);
+        }
+
+        // Flush any buffered entries so the view reflects the latest data.
+        if (function_exists('wp_log_flush')) {
+            wp_log_flush();
         }
 
         ob_start();
@@ -387,13 +362,16 @@ class LogViewerPage
             wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'sentinel'));
         }
 
+        // Flush any buffered entries so the page always shows the latest data.
+        if (function_exists('wp_log_flush')) {
+            wp_log_flush();
+        }
+
         $config  = self::getLoggingConfig();
         $cleared = isset($_GET['cleared']) && $_GET['cleared'] === '1';
-        $flushed = isset($_GET['flushed']) ? (int) $_GET['flushed'] : -1;
         $loggerDeployed = class_exists('Sentinel_Logger');
         $tableExists    = self::tableExists();
         $data           = self::getAggregateData();
-        $bufferCount    = $loggerDeployed ? \Sentinel_Logger::instance()->bufferCount() : 0;
 
         ?>
         <div class="wrap">
@@ -402,23 +380,6 @@ class LogViewerPage
             <?php if ($cleared): ?>
                 <div class="notice notice-success is-dismissible">
                     <p><?php esc_html_e('Log table cleared successfully.', 'sentinel'); ?></p>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($flushed >= 0): ?>
-                <div class="notice notice-success is-dismissible">
-                    <p>
-                        <?php
-                        if ($flushed > 0) {
-                            printf(
-                                esc_html__('Flushed %d buffered entries to the database.', 'sentinel'),
-                                $flushed
-                            );
-                        } else {
-                            esc_html_e('Buffer was empty — nothing to flush.', 'sentinel');
-                        }
-                        ?>
-                    </p>
                 </div>
             <?php endif; ?>
 
@@ -441,27 +402,6 @@ class LogViewerPage
                             <span class="dashicons dashicons-update" style="vertical-align: middle; margin-top: -2px;"></span>
                             <?php esc_html_e('Refresh', 'sentinel'); ?>
                         </button>
-                        <?php if ($loggerDeployed): ?>
-                            <form method="post" style="display: inline;">
-                                <?php wp_nonce_field(self::FLUSH_ACTION, '_sentinel_flush_nonce'); ?>
-                                <button type="submit"
-                                        name="sentinel_flush_log"
-                                        value="1"
-                                        class="button"
-                                        title="<?php echo esc_attr(sprintf(
-                                            __('%d entries currently buffered in memory', 'sentinel'),
-                                            $bufferCount
-                                        )); ?>">
-                                    <span class="dashicons dashicons-database-export" style="vertical-align: middle; margin-top: -2px;"></span>
-                                    <?php
-                                    printf(
-                                        esc_html__('Flush Buffer (%d)', 'sentinel'),
-                                        $bufferCount
-                                    );
-                                    ?>
-                                </button>
-                            </form>
-                        <?php endif; ?>
                         <?php if ($tableExists && $data['total_rows'] > 0): ?>
                             <form method="post" style="display: inline;">
                                 <?php wp_nonce_field(self::CLEAR_ACTION, '_sentinel_nonce'); ?>

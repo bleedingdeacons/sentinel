@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Plugin Name: Sentinel
- * Description: Intergroup plugins Dashboard and Shared Logger.
+ * Description: Dashboard displaying the Intergroup plugin(s) status.
  * Version: 1.3.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
