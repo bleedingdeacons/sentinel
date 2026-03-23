@@ -279,6 +279,14 @@ class DashboardWidget
                     ?>
                 </p>
             <?php endif; ?>
+
+            <!-- Log Summary link -->
+            <div class="sentinel-widget-footer">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=' . \Sentinel\Plugin::MENU_SLUG)); ?>" class="button button-secondary button-small">
+                    <span class="dashicons dashicons-list-view" style="vertical-align: middle; margin-top: -2px; font-size: 16px; width: 16px; height: 16px;"></span>
+                    <?php esc_html_e('View Log Summary', 'sentinel'); ?>
+                </a>
+            </div>
         </div>
         <?php
     }

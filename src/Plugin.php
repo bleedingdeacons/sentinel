@@ -23,6 +23,12 @@ class Plugin
 
     private static bool $initialized = false;
 
+    /**
+     * Top-level admin menu slug – shared with sub-pages.
+     */
+    public const MENU_SLUG  = 'sentinel';
+    private const CAPABILITY = 'manage_options';
+
     protected static function logChannel(): string
     {
         return 'sentinel';
@@ -45,6 +51,8 @@ class Plugin
 
         // Initialize the dashboard widget, log viewer and settings (admin only)
         if (is_admin()) {
+            add_action('admin_menu', [self::class, 'registerTopLevelMenu']);
+
             DashboardWidget::init();
             SettingsPage::init();
 
@@ -56,5 +64,24 @@ class Plugin
         }
 
         self::logDebug('Sentinel initialised');
+    }
+
+    /**
+     * Register the top-level Sentinel admin menu.
+     *
+     * The first submenu page (Logs) is registered by LogViewerPage and
+     * replaces the auto-generated duplicate entry.
+     */
+    public static function registerTopLevelMenu(): void
+    {
+        add_menu_page(
+            __('Sentinel', 'sentinel'),      // page title
+            __('Sentinel', 'sentinel'),      // menu title
+            self::CAPABILITY,
+            self::MENU_SLUG,                 // slug — LogViewerPage will match this for the first submenu
+            '__return_null',                 // placeholder callback, overridden by the first submenu
+            'dashicons-shield',              // icon
+            80                               // position
+        );
     }
 }

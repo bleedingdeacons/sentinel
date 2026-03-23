@@ -4,7 +4,7 @@
 
 Sentinel adds a WordPress admin dashboard widget that monitors the health of the Intergroup plugin suite — Unity, Scrutiny, Integrity, Concordance, and Amber. It shows each plugin's version and active/inactive status at a glance, with automatic AJAX refresh when plugins are activated or deactivated.
 
-**Version:** 1.2.0
+**Version:** 1.3.1
 **Requires:** WordPress 6.0+ · PHP 8.1+
 **License:** MIT (Modified — see [License](#license))
 **Author:** [The Bleeding Deacons](mailto:thebleedingdeacons@gmail.com)

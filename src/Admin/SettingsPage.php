@@ -9,8 +9,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Sentinel\Plugin;
+
 use function add_action;
-use function add_options_page;
+use function add_submenu_page;
 use function check_admin_referer;
 use function current_user_can;
 use function esc_attr;
@@ -23,14 +25,14 @@ use function wp_nonce_field;
 /**
  * Class SettingsPage
  *
- * Registers a Sentinel settings page under Settings → Sentinel.
+ * Registers a Sentinel settings page under the Sentinel top-level menu.
  * Currently exposes:
  *   - Whether to drop the log database table on plugin uninstall.
  */
 class SettingsPage
 {
     private const PAGE_SLUG  = 'sentinel-settings';
-    private const MENU_TITLE = 'Sentinel';
+    private const MENU_TITLE = 'Settings';
     private const PAGE_TITLE = 'Sentinel Settings';
     private const CAPABILITY = 'manage_options';
 
@@ -50,11 +52,12 @@ class SettingsPage
     }
 
     /**
-     * Register the settings page under Settings.
+     * Register the settings page as a submenu under Sentinel.
      */
     public static function registerPage(): void
     {
-        add_options_page(
+        add_submenu_page(
+            Plugin::MENU_SLUG,       // parent slug
             self::PAGE_TITLE,
             self::MENU_TITLE,
             self::CAPABILITY,

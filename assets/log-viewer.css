@@ -203,6 +203,133 @@
     background-color: #fef8f8 !important;
 }
 
+/* Actions column & Copy button
+   ========================================================================== */
+
+.sentinel-log-col-actions {
+    width: 40px;
+    text-align: center !important;
+    padding: 0 8px !important;
+}
+
+thead .sentinel-log-col-actions {
+    border-bottom: 1px solid #c3c4c7;
+}
+
+.sentinel-copy-btn {
+    display: none;
+    background: none;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 3px 5px;
+    color: #50575e;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.sentinel-copy-btn .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.sentinel-copy-btn:hover {
+    color: #2271b1;
+    border-color: #2271b1;
+    background: #f0f7fc;
+}
+
+/* Show copy button when hovering over the header row or its sibling message row */
+.sentinel-log-row-header:hover .sentinel-copy-btn,
+.sentinel-log-row-message:hover + .sentinel-log-row-header .sentinel-copy-btn {
+    display: inline-block;
+}
+
+/* Also show when hovering the message row – target via adjacent sibling on header */
+.sentinel-log-row-header:hover + .sentinel-log-row-message ~ .sentinel-log-row-header .sentinel-copy-btn {
+    display: none;
+}
+
+/* Use JS-assisted hover group approach: show btn on header hover */
+.sentinel-log-row-header:hover .sentinel-copy-btn {
+    display: inline-block;
+}
+
+/* Auto-refresh toggle switch
+   ========================================================================== */
+
+.sentinel-auto-refresh-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    margin-right: 4px;
+}
+
+.sentinel-toggle-label {
+    font-size: 13px;
+    color: #50575e;
+    line-height: 1;
+}
+
+.sentinel-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+}
+
+.sentinel-toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.sentinel-toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #c3c4c7;
+    border-radius: 20px;
+    transition: background-color 0.2s;
+}
+
+.sentinel-toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.sentinel-toggle-switch input:checked + .sentinel-toggle-slider {
+    background-color: #2271b1;
+}
+
+.sentinel-toggle-switch input:checked + .sentinel-toggle-slider::before {
+    transform: translateX(16px);
+}
+
+.sentinel-toggle-switch input:focus + .sentinel-toggle-slider {
+    box-shadow: 0 0 0 2px #2271b1;
+}
+
+/* Database table name below table */
+
+.sentinel-table-name {
+    margin-top: 12px;
+    margin-bottom: 0;
+}
+
 /* Configuration Table
    ========================================================================== */
 

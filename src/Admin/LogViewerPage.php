@@ -9,8 +9,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Sentinel\Plugin;
+
 use function add_action;
 use function admin_url;
+use function add_submenu_page;
 use function check_admin_referer;
 use function current_user_can;
 use function esc_attr;
@@ -28,10 +31,10 @@ use function wp_verify_nonce;
 /**
  * Class LogViewerPage
  *
- * Registers a WordPress admin page under Tools that displays
- * aggregated log entries from the database table. Entries are grouped
- * by channel + level with counts, and the page provides a "Clear Log"
- * action.
+ * Registers a WordPress admin page under the Sentinel top-level menu
+ * that displays aggregated log entries from the database table. Entries
+ * are grouped by channel + level with counts, and the page provides a
+ * "Clear Log" action.
  *
  * Also displays the current logging configuration (defines/filters)
  * and explains how to control logging output.
@@ -39,11 +42,14 @@ use function wp_verify_nonce;
 class LogViewerPage
 {
     private const PAGE_SLUG    = 'sentinel-logs';
-    private const MENU_TITLE   = 'Sentinel Logs';
+    private const MENU_TITLE   = 'Logs';
     private const PAGE_TITLE   = 'Sentinel Log Viewer';
     private const CAPABILITY   = 'manage_options';
     private const CLEAR_ACTION = 'sentinel_clear_log';
     private const AJAX_ACTION  = 'sentinel_log_viewer_refresh';
+
+    /** @var string The hook suffix returned by add_submenu_page(). */
+    private static string $hookSuffix = '';
 
     /**
      * Hook into WordPress.
@@ -57,15 +63,19 @@ class LogViewerPage
     }
 
     /**
-     * Register the admin page under Tools.
+     * Register the admin page as a submenu under Sentinel.
+     * This is also the first submenu, so it replaces the auto-generated
+     * parent duplicate by using the parent slug as its own slug.
      */
     public static function registerPage(): void
     {
-        add_management_page(
+        // First submenu replaces the auto-generated parent entry.
+        self::$hookSuffix = (string) add_submenu_page(
+            Plugin::MENU_SLUG,       // parent slug
             self::PAGE_TITLE,
             self::MENU_TITLE,
             self::CAPABILITY,
-            self::PAGE_SLUG,
+            Plugin::MENU_SLUG,       // use parent slug so it becomes the landing page
             [self::class, 'renderPage']
         );
     }
@@ -75,7 +85,7 @@ class LogViewerPage
      */
     public static function enqueueAssets(string $hook): void
     {
-        if ($hook !== 'tools_page_' . self::PAGE_SLUG) {
+        if (self::$hookSuffix === '' || $hook !== self::$hookSuffix) {
             return;
         }
 
@@ -122,8 +132,8 @@ class LogViewerPage
 
         wp_safe_redirect(
             add_query_arg(
-                ['page' => self::PAGE_SLUG, 'cleared' => '1'],
-                admin_url('tools.php')
+                ['page' => Plugin::MENU_SLUG, 'cleared' => '1'],
+                admin_url('admin.php')
             )
         );
         exit;
@@ -211,9 +221,7 @@ class LogViewerPage
                 MAX(logged_at)      AS last_seen
             FROM {$table}
             GROUP BY channel, level
-            ORDER BY
-                FIELD(level, 'emergency','alert','critical','error','warning','notice','info','debug'),
-                cnt DESC
+            ORDER BY last_seen DESC
         ");
 
         if (!$rows) {
@@ -322,11 +330,17 @@ class LogViewerPage
                     <th class="sentinel-log-col-channel"><?php esc_html_e('Channel', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
                     <th class="sentinel-log-col-time"><?php esc_html_e('Last Seen', 'sentinel'); ?></th>
+                    <th class="sentinel-log-col-actions"></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($aggregates as $entry): ?>
-                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
+                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header"
+                        data-level="<?php echo esc_attr(strtoupper($entry['level'])); ?>"
+                        data-channel="<?php echo esc_attr($entry['channel']); ?>"
+                        data-count="<?php echo esc_attr(number_format($entry['count'])); ?>"
+                        data-last-seen="<?php echo esc_attr($entry['last_seen']); ?>"
+                        data-message="<?php echo esc_attr($entry['last_message']); ?>">
                         <td class="sentinel-log-col-level">
                             <span class="sentinel-badge sentinel-badge--<?php echo esc_attr($entry['level']); ?>">
                                 <?php echo esc_html(strtoupper($entry['level'])); ?>
@@ -341,9 +355,14 @@ class LogViewerPage
                         <td class="sentinel-log-col-time">
                             <span class="sentinel-log-time"><?php echo esc_html($entry['last_seen']); ?></span>
                         </td>
+                        <td class="sentinel-log-col-actions">
+                            <button type="button" class="sentinel-copy-btn" title="<?php esc_attr_e('Copy to clipboard', 'sentinel'); ?>">
+                                <span class="dashicons dashicons-clipboard"></span>
+                            </button>
+                        </td>
                     </tr>
                     <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-message">
-                        <td colspan="4" class="sentinel-log-col-message">
+                        <td colspan="5" class="sentinel-log-col-message">
                             <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
                         </td>
                     </tr>
@@ -396,8 +415,15 @@ class LogViewerPage
             <!-- Log Aggregate Section -->
             <div class="sentinel-log-section">
                 <div class="sentinel-log-header">
-                    <h2><?php esc_html_e('Log Aggregates', 'sentinel'); ?></h2>
+                    <h2><?php esc_html_e('Summary', 'sentinel'); ?></h2>
                     <div class="sentinel-log-actions">
+                        <label class="sentinel-auto-refresh-toggle" for="sentinel-auto-refresh">
+                            <span class="sentinel-toggle-label"><?php esc_html_e('Auto-refresh', 'sentinel'); ?></span>
+                            <span class="sentinel-toggle-switch">
+                                <input type="checkbox" id="sentinel-auto-refresh" />
+                                <span class="sentinel-toggle-slider"></span>
+                            </span>
+                        </label>
                         <button type="button" class="button" id="sentinel-refresh-log">
                             <span class="dashicons dashicons-update" style="vertical-align: middle; margin-top: -2px;"></span>
                             <?php esc_html_e('Refresh', 'sentinel'); ?>
@@ -418,16 +444,16 @@ class LogViewerPage
                     </div>
                 </div>
 
+                <div id="sentinel-log-aggregate-container">
+                    <?php self::renderAggregateTable(); ?>
+                </div>
+
                 <?php if ($data['table_name']): ?>
-                    <p class="description">
+                    <p class="description sentinel-table-name">
                         <?php esc_html_e('Database table:', 'sentinel'); ?>
                         <code><?php echo esc_html($data['table_name']); ?></code>
                     </p>
                 <?php endif; ?>
-
-                <div id="sentinel-log-aggregate-container">
-                    <?php self::renderAggregateTable(); ?>
-                </div>
             </div>
 
             <!-- Logging Configuration Section -->
