@@ -239,6 +239,22 @@
     pointer-events: none;
     transition: opacity 0.2s, transform 0.2s;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sentinel-toast-label {
+    line-height: 1;
+}
+
+.sentinel-toast-countdown {
+    display: none;
+    line-height: 0;
+}
+
+.sentinel-toast-countdown svg {
+    transform: rotate(-90deg);
 }
 
 .sentinel-copy-toast.sentinel-toast-visible {

@@ -124,6 +124,8 @@
      * all accumulated entries to clipboard. Plain click resets the buffer.
      */
     var clipBuffer = '';
+    var clipBufferClearTimer = null;
+    var CLIP_BUFFER_CLEAR_DELAY = 5000; // 5 seconds
 
     function handleCopy(group, e) {
         var level    = group.getAttribute('data-level')     || '';
@@ -156,15 +158,77 @@
             document.body.removeChild(ta);
             showCopied(group, append);
         }
+
+        /* When Ctrl/Cmd-clicking, schedule a clear of the internal clip buffer
+           after 15 seconds. Each new Ctrl/Cmd-click resets the timer so the
+           window stays open while the user is actively accumulating entries. */
+        if (append) {
+            if (clipBufferClearTimer) {
+                clearTimeout(clipBufferClearTimer);
+            }
+            clipBufferClearTimer = setTimeout(function () {
+                clipBuffer = '';
+                copyCount = 0;
+                clipBufferClearTimer = null;
+            }, CLIP_BUFFER_CLEAR_DELAY);
+        }
     }
 
     /* Toast element – created once, reused */
     var toast = document.createElement('div');
     toast.className = 'sentinel-copy-toast';
-    toast.textContent = 'Copied to clipboard';
     document.body.appendChild(toast);
+
+    var toastLabel = document.createElement('span');
+    toastLabel.className = 'sentinel-toast-label';
+    toastLabel.textContent = 'Copied to clipboard';
+    toast.appendChild(toastLabel);
+
+    /* Countdown circle (SVG) – appended to toast, shown only during Ctrl+click accumulation */
+    var COUNTDOWN_RADIUS = 8;
+    var COUNTDOWN_CIRCUMFERENCE = 2 * Math.PI * COUNTDOWN_RADIUS;
+
+    var countdownWrap = document.createElement('span');
+    countdownWrap.className = 'sentinel-toast-countdown';
+    countdownWrap.innerHTML =
+        '<svg width="21" height="21" viewBox="0 0 21 21">' +
+            '<circle cx="10.5" cy="10.5" r="' + COUNTDOWN_RADIUS + '" stroke="rgba(255,255,255,.25)" stroke-width="2.5" fill="none" />' +
+            '<circle class="sentinel-countdown-progress" cx="10.5" cy="10.5" r="' + COUNTDOWN_RADIUS + '" ' +
+                'stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" ' +
+                'stroke-dasharray="' + COUNTDOWN_CIRCUMFERENCE + '" stroke-dashoffset="0" />' +
+        '</svg>';
+    toast.appendChild(countdownWrap);
+
+    var countdownCircle = countdownWrap.querySelector('.sentinel-countdown-progress');
+    var countdownInterval = null;
     var toastTimer = null;
     var copyCount = 0;
+
+    function startCountdown() {
+        stopCountdown();
+        countdownCircle.style.strokeDashoffset = '0';
+        countdownWrap.style.display = 'inline-block';
+
+        var startTime = Date.now();
+        var duration = CLIP_BUFFER_CLEAR_DELAY;
+
+        function tick() {
+            var elapsed = Date.now() - startTime;
+            var progress = Math.min(elapsed / duration, 1);
+            countdownCircle.style.strokeDashoffset = progress * COUNTDOWN_CIRCUMFERENCE;
+            if (progress < 1) {
+                countdownInterval = requestAnimationFrame(tick);
+            }
+        }
+        countdownInterval = requestAnimationFrame(tick);
+    }
+
+    function stopCountdown() {
+        if (countdownInterval) {
+            cancelAnimationFrame(countdownInterval);
+            countdownInterval = null;
+        }
+    }
 
     function showCopied(group, appended) {
         group.classList.add('sentinel-copied');
@@ -181,18 +245,34 @@
 
         /* Show toast */
         if (copyCount > 1) {
-            toast.textContent = 'Copied ' + copyCount + ' items to clipboard';
+            toastLabel.textContent = 'Copied ' + copyCount + ' items';
         } else {
-            toast.textContent = 'Copied to clipboard';
+            toastLabel.textContent = 'Copied to clipboard';
         }
+
         if (toastTimer) {
             clearTimeout(toastTimer);
         }
         toast.classList.add('sentinel-toast-visible');
-        toastTimer = setTimeout(function () {
-            toast.classList.remove('sentinel-toast-visible');
-            toastTimer = null;
-        }, 1500);
+
+        if (appended) {
+            /* Ctrl+click: keep toast visible with countdown until buffer clears */
+            startCountdown();
+            toastTimer = setTimeout(function () {
+                toast.classList.remove('sentinel-toast-visible');
+                stopCountdown();
+                countdownWrap.style.display = 'none';
+                toastTimer = null;
+            }, CLIP_BUFFER_CLEAR_DELAY);
+        } else {
+            /* Plain click: brief toast, no countdown */
+            countdownWrap.style.display = 'none';
+            stopCountdown();
+            toastTimer = setTimeout(function () {
+                toast.classList.remove('sentinel-toast-visible');
+                toastTimer = null;
+            }, 1500);
+        }
     }
 
     /**
