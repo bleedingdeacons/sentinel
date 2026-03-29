@@ -248,51 +248,6 @@ class LogViewerPage
     }
 
     /**
-     * Get the current logging configuration.
-     *
-     * @return array<string, array{value: mixed, source: string, description: string}>
-     */
-    private static function getLoggingConfig(): array
-    {
-        $config = [];
-
-        // SENTINEL_LOG_ENABLED
-        $config['SENTINEL_LOG_ENABLED'] = [
-            'value'       => defined('SENTINEL_LOG_ENABLED') ? (SENTINEL_LOG_ENABLED ? 'true' : 'false') : '(not set — default: true)',
-            'source'      => defined('SENTINEL_LOG_ENABLED') ? 'wp-config.php' : 'default',
-            'description' => 'Master switch. Set to false to disable all logging.',
-            'example'     => "define( 'SENTINEL_LOG_ENABLED', false );",
-        ];
-
-        // SENTINEL_LOG_LEVEL
-        $config['SENTINEL_LOG_LEVEL'] = [
-            'value'       => defined('SENTINEL_LOG_LEVEL') ? SENTINEL_LOG_LEVEL : '(not set — default: debug)',
-            'source'      => defined('SENTINEL_LOG_LEVEL') ? 'wp-config.php' : 'default',
-            'description' => 'Minimum severity to record. Messages below this level are discarded.',
-            'example'     => "define( 'SENTINEL_LOG_LEVEL', 'warning' );",
-            'options'     => 'emergency, alert, critical, error, warning, notice, info, debug',
-        ];
-
-        // SENTINEL_LOG_MAX_ROWS
-        $config['SENTINEL_LOG_MAX_ROWS'] = [
-            'value'       => defined('SENTINEL_LOG_MAX_ROWS') ? number_format(SENTINEL_LOG_MAX_ROWS) : '(not set — default: 10,000)',
-            'source'      => defined('SENTINEL_LOG_MAX_ROWS') ? 'wp-config.php' : 'default',
-            'description' => 'Maximum number of rows kept in the log table. Oldest entries are pruned automatically.',
-            'example'     => "define( 'SENTINEL_LOG_MAX_ROWS', 25000 );",
-        ];
-
-        // SENTINEL_LOG_BUFFER_SIZE
-        $config['SENTINEL_LOG_BUFFER_SIZE'] = [
-            'value'       => defined('SENTINEL_LOG_BUFFER_SIZE') ? number_format(SENTINEL_LOG_BUFFER_SIZE) : '(not set — default: 50)',
-            'source'      => defined('SENTINEL_LOG_BUFFER_SIZE') ? 'wp-config.php' : 'default',
-            'description' => 'Number of entries held in the in-memory buffer before auto-flushing to the database. Lower values mean more frequent writes; higher values reduce DB round-trips.',
-            'example'     => "define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );",
-        ];
-
-        return $config;
-    }
-
-    /**
      * Render the aggregate table HTML (used for both full page and AJAX).
      */
     public static function renderAggregateTable(): void
@@ -379,7 +334,6 @@ class LogViewerPage
             wp_log_flush();
         }
 
-        $config  = self::getLoggingConfig();
         $cleared = isset($_GET['cleared']) && $_GET['cleared'] === '1';
         $loggerDeployed = class_exists('Sentinel_Logger');
         $tableExists    = self::tableExists();
@@ -440,112 +394,13 @@ class LogViewerPage
                 <div id="sentinel-log-aggregate-container">
                     <?php self::renderAggregateTable(); ?>
                 </div>
-
+                <br>
                 <?php if ($data['table_name']): ?>
                     <p class="description sentinel-table-name">
                         <?php esc_html_e('Database table:', 'sentinel'); ?>
                         <code><?php echo esc_html($data['table_name']); ?></code>
                     </p>
                 <?php endif; ?>
-            </div>
-
-            <!-- Logging Configuration Section -->
-            <div class="sentinel-log-section sentinel-config-section">
-                <h2><?php esc_html_e('Logging Configuration', 'sentinel'); ?></h2>
-                <p class="description">
-                    <?php esc_html_e(
-                        'Control logging output by adding these constants to your wp-config.php file (before the "That\'s all" comment). Changes take effect on the next page load.',
-                        'sentinel'
-                    ); ?>
-                </p>
-
-                <table class="sentinel-config-table widefat">
-                    <thead>
-                        <tr>
-                            <th><?php esc_html_e('Constant', 'sentinel'); ?></th>
-                            <th><?php esc_html_e('Current Value', 'sentinel'); ?></th>
-                            <th><?php esc_html_e('Source', 'sentinel'); ?></th>
-                            <th><?php esc_html_e('Description', 'sentinel'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($config as $name => $def): ?>
-                            <tr>
-                                <td><code class="sentinel-config-name"><?php echo esc_html($name); ?></code></td>
-                                <td>
-                                    <span class="sentinel-config-value <?php echo $def['source'] === 'default' ? 'sentinel-config-default' : 'sentinel-config-set'; ?>">
-                                        <?php echo esc_html((string) $def['value']); ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?php if ($def['source'] === 'wp-config.php'): ?>
-                                        <span class="sentinel-badge sentinel-badge--active"><?php echo esc_html($def['source']); ?></span>
-                                    <?php else: ?>
-                                        <span class="sentinel-badge sentinel-badge--inactive"><?php echo esc_html($def['source']); ?></span>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php echo esc_html($def['description']); ?>
-                                    <?php if (!empty($def['options'])): ?>
-                                        <br><small class="sentinel-config-options">
-                                            <?php esc_html_e('Options:', 'sentinel'); ?>
-                                            <?php echo esc_html($def['options']); ?>
-                                        </small>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-
-                <div class="sentinel-config-examples">
-                    <h3><?php esc_html_e('Example wp-config.php Snippets', 'sentinel'); ?></h3>
-                    <p class="description">
-                        <?php esc_html_e('Add any of these lines to wp-config.php to customise logging behaviour.', 'sentinel'); ?>
-                    </p>
-                    <pre class="sentinel-code-block"><?php
-                        $examples = [];
-                        foreach ($config as $name => $def) {
-                            if (!empty($def['example'])) {
-                                $examples[] = $def['example'];
-                            }
-                        }
-                        echo esc_html(implode("\n", $examples));
-                    ?></pre>
-
-                    <h3><?php esc_html_e('Filter Hooks (Advanced)', 'sentinel'); ?></h3>
-                    <p class="description">
-                        <?php esc_html_e('If you prefer not to use constants, each setting can also be controlled via a WordPress filter. Constants always take precedence.', 'sentinel'); ?>
-                    </p>
-                    <pre class="sentinel-code-block"><?php echo esc_html(
-"// Set minimum log level via filter
-add_filter( 'sentinel_logger_level', function () {
-    return 'warning';
-});
-
-// Disable logging via filter
-add_filter( 'sentinel_logger_enabled', '__return_false' );
-
-// Set max rows via filter
-add_filter( 'sentinel_logger_max_rows', function () {
-    return 25000;
-});
-
-// Set in-memory buffer size via filter
-add_filter( 'sentinel_logger_buffer_size', function () {
-    return 100;
-});
-
-// Suppress or modify individual entries
-add_filter( 'sentinel_logger_entry', function ( \$entry, \$channel ) {
-    // Suppress all debug entries from the 'unity' channel
-    if ( \$channel === 'unity' && \$entry['level'] === 'debug' ) {
-        return null;
-    }
-    return \$entry;
-}, 10, 2 );"
-                    ); ?></pre>
-                </div>
             </div>
         </div>
         <?php

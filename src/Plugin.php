@@ -47,23 +47,21 @@ class Plugin
 
         self::$initialized = true;
 
-        self::logInfo('Sentinel initialising', ['version' => SENTINEL_VERSION]);
-
         // Initialize the dashboard widget, log viewer and settings (admin only)
         if (is_admin()) {
             add_action('admin_menu', [self::class, 'registerTopLevelMenu']);
 
             DashboardWidget::init();
-            SettingsPage::init();
 
             try {
                 LogViewerPage::init();
             } catch (\Throwable $e) {
                 self::logError('LogViewerPage failed to initialise: ' . $e->getMessage());
             }
-        }
 
-        self::logDebug('Sentinel initialised');
+            SettingsPage::init();
+        }
+        self::logDebug('Initialised', ['version' => defined('SENTINEL_VERSION') ? SENTINEL_VERSION : 'unknown']);
     }
 
     /**
