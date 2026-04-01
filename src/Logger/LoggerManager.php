@@ -23,6 +23,13 @@ class LoggerManager
     private const MU_FILENAME = 'sentinel-logger.php';
 
     /**
+     * Legacy filename(s) from earlier versions of the plugin.
+     */
+    private const LEGACY_MU_FILENAMES = [
+        'bd-shared-logger.php',
+    ];
+
+    /**
      * Get the source path (bundled inside Sentinel).
      */
     public static function sourcePath(): string
@@ -61,6 +68,9 @@ class LoggerManager
         if (!file_exists(WPMU_PLUGIN_DIR)) {
             wp_mkdir_p(WPMU_PLUGIN_DIR);
         }
+
+        // Remove any legacy-named copies to prevent "Cannot redeclare" fatals
+        self::removeLegacy();
 
         // Skip copy if the deployed version is identical (saves I/O)
         if (!$force && file_exists($dest) && md5_file($source) === md5_file($dest)) {
@@ -105,6 +115,22 @@ class LoggerManager
         }
 
         return md5_file($source) === md5_file($dest);
+    }
+
+    /**
+     * Remove legacy-named mu-plugin files from earlier versions.
+     *
+     * Prevents "Cannot redeclare" fatal errors when the plugin
+     * filename has changed between releases.
+     */
+    public static function removeLegacy(): void
+    {
+        foreach (self::LEGACY_MU_FILENAMES as $legacy) {
+            $path = WPMU_PLUGIN_DIR . '/' . $legacy;
+            if (file_exists($path)) {
+                @unlink($path);
+            }
+        }
     }
 
     /**

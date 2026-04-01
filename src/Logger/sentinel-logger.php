@@ -20,6 +20,93 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// ─── PHP Error and Exception Handlers ──────────────────────────────────────
+//
+// These handlers capture:
+//   • Warnings / notices / deprecated
+//   • Uncaught exceptions
+//
+// They DO NOT capture fatal errors — Sentinel_Logger::handleShutdown()
+// already handles those safely.
+//
+set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+
+    // Respect error suppression with @
+    if (error_reporting() === 0) {
+        return false;
+    }
+
+    // Map PHP error constants to PSR-3 levels
+    $map = [
+        E_WARNING           => Sentinel_Log_Level::WARNING,
+        E_USER_WARNING      => Sentinel_Log_Level::WARNING,
+        E_NOTICE            => Sentinel_Log_Level::NOTICE,
+        E_USER_NOTICE       => Sentinel_Log_Level::NOTICE,
+        E_DEPRECATED        => Sentinel_Log_Level::NOTICE,
+        E_USER_DEPRECATED   => Sentinel_Log_Level::NOTICE,
+        E_STRICT            => Sentinel_Log_Level::NOTICE,
+        E_USER_ERROR        => Sentinel_Log_Level::ERROR,
+        E_RECOVERABLE_ERROR => Sentinel_Log_Level::ERROR,
+    ];
+
+    $level = $map[$errno] ?? Sentinel_Log_Level::ERROR;
+
+    wp_log('php')->log(
+        $level,
+        $errstr,
+        [
+            'errno' => $errno,
+            'file'  => $errfile,
+            'line'  => $errline,
+        ]
+    );
+
+    // Let WordPress / PHP continue default handling
+    return false;
+});
+
+// Exceptions → logged as CRITICAL
+set_exception_handler(function (Throwable $e) {
+    wp_log('php')->critical(
+        'Uncaught exception: {message}',
+        [
+            'message' => $e->getMessage(),
+            'file'    => $e->getFile(),
+            'line'    => $e->getLine(),
+            'trace'   => $e->getTraceAsString(),
+        ]
+    );
+});
+
+// ─── WordPress wp_die() Handler Logging ─────────────────────────────────────
+
+add_filter('wp_die_handler', function () {
+    return 'sentinel_wp_die_handler';
+});
+
+function sentinel_wp_die_handler($message, $title = '', $args = []) {
+
+    // Log it before handing off
+    wp_log('wp')->critical(
+        'wp_die: {message}',
+        [
+            'message' => is_string($message) ? wp_strip_all_tags($message) : json_encode($message),
+            'title'   => $title,
+            'args'    => $args,
+            'file'    => $args['file'] ?? null,
+            'line'    => $args['line'] ?? null,
+        ]
+    );
+
+    // Use WP’s default handler to preserve output
+    $handler = '_default_wp_die_handler';
+    if (isset($args['exit']) && !$args['exit']) {
+        return call_user_func($handler, $message, $title, $args);
+    }
+
+    call_user_func($handler, $message, $title, $args);
+}
+
 // Guard: if the logger is already loaded (e.g. another copy), bail out.
 if (function_exists('wp_log')) {
     return;
@@ -552,9 +639,11 @@ final class Sentinel_Logger
  *   wp_log('sentinel')->info('Widget loaded');
  *   wp_log('unity')->error('Sync failed', ['reason' => $e->getMessage()]);
  */
-function wp_log(string $channel = 'default'): Sentinel_Log_Channel
-{
-    return Sentinel_Logger::channel($channel);
+if ( ! function_exists( 'wp_log' ) ) {
+    function wp_log(string $channel = 'default'): Sentinel_Log_Channel
+    {
+        return Sentinel_Logger::channel($channel);
+    }
 }
 
 /**
@@ -564,7 +653,9 @@ function wp_log(string $channel = 'default'): Sentinel_Log_Channel
  *
  * @return int Number of rows written.
  */
-function wp_log_flush(): int
-{
-    return Sentinel_Logger::instance()->flush();
+if ( ! function_exists( 'wp_log_flush' ) ) {
+    function wp_log_flush(): int
+    {
+        return Sentinel_Logger::instance()->flush();
+    }
 }
