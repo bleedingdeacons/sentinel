@@ -464,8 +464,13 @@ final class Sentinel_Logger
         $context = $this->redact($context);
 
         $contextJson = !empty($context)
-            ? wp_json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            ? json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
             : '';
+
+        $memory = memory_get_usage(true);
+        $memoryStr = $memory < 1048576
+            ? round($memory / 1024) . ' KB'
+            : round($memory / 1048576, 1) . ' MB';
 
         $this->buffer[] = [
             'logged_at'    => gmdate('Y-m-d H:i:s'),
@@ -473,7 +478,7 @@ final class Sentinel_Logger
             'channel'      => $channel,
             'request_type' => $this->getRequestType(),
             'request_id'   => $this->getRequestId(),
-            'memory'       => size_format(memory_get_usage(true)),
+            'memory'       => $memoryStr,
             'message'      => $message,
             'context'      => $contextJson ?: '',
         ];
@@ -490,7 +495,9 @@ final class Sentinel_Logger
     private function maybePrune(): void
     {
         // Only prune roughly 1 in 100 flushes to keep things fast.
-        if (wp_rand(1, 100) !== 1) {
+        // Uses random_int() instead of wp_rand() — safe during shutdown
+        // when WordPress functions may no longer be available.
+        if (random_int(1, 100) !== 1) {
             return;
         }
 
@@ -607,11 +614,18 @@ final class Sentinel_Logger
 
         global $wpdb;
 
-        $context = wp_json_encode([
+        // Use json_encode() instead of wp_json_encode() — safe during shutdown.
+        $context = json_encode([
             'file' => $error['file'],
             'line' => $error['line'],
             'type' => $error['type'],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        // Use a plain byte count instead of size_format() — safe during shutdown.
+        $memory = memory_get_usage(true);
+        $memoryStr = $memory < 1048576
+            ? round($memory / 1024) . ' KB'
+            : round($memory / 1048576, 1) . ' MB';
 
         // Direct insert — buffer is already flushed, keep this immediate.
         $wpdb->insert(
@@ -622,7 +636,7 @@ final class Sentinel_Logger
                 'channel'      => 'php',
                 'request_type' => $this->getRequestType(),
                 'request_id'   => $this->getRequestId(),
-                'memory'       => size_format(memory_get_usage(true)),
+                'memory'       => $memoryStr,
                 'message'      => 'Fatal: ' . $error['message'],
                 'context'      => $context ?: '',
             ],
