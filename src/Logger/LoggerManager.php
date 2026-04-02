@@ -163,8 +163,8 @@ class LoggerManager
         // isn't available, drop the table directly.
         global $wpdb;
         $table = $wpdb->prefix . 'sentinel_log_entries';
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $wpdb->query("DROP TABLE IF EXISTS {$table}");
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $wpdb->query("DROP TABLE IF EXISTS `" . esc_sql($table) . "`");
         delete_option('sentinel_logger_db_version');
     }
 }
