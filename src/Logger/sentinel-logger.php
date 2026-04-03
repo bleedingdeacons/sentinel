@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel Shared Logger
  * Description: PSR-3 cross-plugin logging framework. Deployed automatically by Sentinel.
- * Version: 2.1.0
+ * Version: 2.1.2
  * Author: The Bleeding Deacons
  * License: MIT
  *
@@ -250,9 +250,11 @@ final class Sentinel_Logger
         $colList = implode(', ', $columns);
         $phList  = implode(', ', $placeholders);
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $escapedTable = '`' . esc_sql($table) . '`';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
         $sql = $wpdb->prepare(
-            "INSERT INTO {$table} ({$colList}) VALUES {$phList}",
+            "INSERT INTO {$escapedTable} ({$colList}) VALUES {$phList}",
             ...$values
         );
 
@@ -315,8 +317,8 @@ final class Sentinel_Logger
     {
         global $wpdb;
         $table = self::tableName();
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $wpdb->query("DROP TABLE IF EXISTS {$table}");
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $wpdb->query("DROP TABLE IF EXISTS `" . esc_sql($table) . "`");
         delete_option(self::DB_VERSION_OPTION);
     }
 
@@ -324,8 +326,8 @@ final class Sentinel_Logger
     {
         global $wpdb;
         $table = self::tableName();
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $wpdb->query("TRUNCATE TABLE {$table}");
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $wpdb->query("TRUNCATE TABLE `" . esc_sql($table) . "`");
     }
 
     // ── Dispatch ──
@@ -416,9 +418,10 @@ final class Sentinel_Logger
 
         global $wpdb;
         $table = self::tableName();
+        $escapedTable = '`' . esc_sql($table) . '`';
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$escapedTable}");
 
         if ($count <= $this->maxRows) {
             return;
@@ -426,9 +429,9 @@ final class Sentinel_Logger
 
         $excess = $count - $this->maxRows;
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
         $wpdb->query($wpdb->prepare(
-            "DELETE FROM {$table} ORDER BY id ASC LIMIT %d",
+            "DELETE FROM {$escapedTable} ORDER BY id ASC LIMIT %d",
             $excess
         ));
     }
