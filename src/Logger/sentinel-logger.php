@@ -20,93 +20,6 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// ─── PHP Error and Exception Handlers ──────────────────────────────────────
-//
-// These handlers capture:
-//   • Warnings / notices / deprecated
-//   • Uncaught exceptions
-//
-// They DO NOT capture fatal errors — Sentinel_Logger::handleShutdown()
-// already handles those safely.
-//
-set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
-
-    // Respect error suppression with @
-    if (error_reporting() === 0) {
-        return false;
-    }
-
-    // Map PHP error constants to PSR-3 levels
-    $map = [
-        E_WARNING           => Sentinel_Log_Level::WARNING,
-        E_USER_WARNING      => Sentinel_Log_Level::WARNING,
-        E_NOTICE            => Sentinel_Log_Level::NOTICE,
-        E_USER_NOTICE       => Sentinel_Log_Level::NOTICE,
-        E_DEPRECATED        => Sentinel_Log_Level::NOTICE,
-        E_USER_DEPRECATED   => Sentinel_Log_Level::NOTICE,
-        E_STRICT            => Sentinel_Log_Level::NOTICE,
-        E_USER_ERROR        => Sentinel_Log_Level::ERROR,
-        E_RECOVERABLE_ERROR => Sentinel_Log_Level::ERROR,
-    ];
-
-    $level = $map[$errno] ?? Sentinel_Log_Level::ERROR;
-
-    wp_log('php')->log(
-        $level,
-        $errstr,
-        [
-            'errno' => $errno,
-            'file'  => $errfile,
-            'line'  => $errline,
-        ]
-    );
-
-    // Let WordPress / PHP continue default handling
-    return false;
-});
-
-// Exceptions → logged as CRITICAL
-set_exception_handler(function (Throwable $e) {
-    wp_log('php')->critical(
-        'Uncaught exception: {message}',
-        [
-            'message' => $e->getMessage(),
-            'file'    => $e->getFile(),
-            'line'    => $e->getLine(),
-            'trace'   => $e->getTraceAsString(),
-        ]
-    );
-});
-
-// ─── WordPress wp_die() Handler Logging ─────────────────────────────────────
-
-add_filter('wp_die_handler', function () {
-    return 'sentinel_wp_die_handler';
-});
-
-function sentinel_wp_die_handler($message, $title = '', $args = []) {
-
-    // Log it before handing off
-    wp_log('wp')->critical(
-        'wp_die: {message}',
-        [
-            'message' => is_string($message) ? wp_strip_all_tags($message) : json_encode($message),
-            'title'   => $title,
-            'args'    => $args,
-            'file'    => $args['file'] ?? null,
-            'line'    => $args['line'] ?? null,
-        ]
-    );
-
-    // Use WP’s default handler to preserve output
-    $handler = '_default_wp_die_handler';
-    if (isset($args['exit']) && !$args['exit']) {
-        return call_user_func($handler, $message, $title, $args);
-    }
-
-    call_user_func($handler, $message, $title, $args);
-}
-
 // Guard: if the logger is already loaded (e.g. another copy), bail out.
 if (function_exists('wp_log')) {
     return;
@@ -672,4 +585,154 @@ if ( ! function_exists( 'wp_log_flush' ) ) {
     {
         return Sentinel_Logger::instance()->flush();
     }
+}
+
+// ─── PHP Error, Exception, and wp_die Handlers ─────────────────────────────
+//
+// These handlers capture PHP warnings/notices/deprecation, uncaught exceptions,
+// and wp_die() calls, logging them through the Sentinel channel system.
+//
+// Registered AFTER the logger classes and wp_log() are defined so that the
+// logging API is guaranteed to be available when they fire.
+//
+// Each handler chains to the previously registered handler (if any) so that
+// other plugins' error handlers (debugging tools, error trackers) are not
+// displaced. The exception handler delegates to the previous handler after
+// logging, preserving WordPress's own handling.
+//
+// Controlled by SENTINEL_CAPTURE_ERRORS (constant or filter):
+//   - true  (default): Sentinel registers its error/exception/wp_die handlers
+//   - false: Sentinel only provides the logger; no global handlers are installed
+//
+// To disable from wp-config.php:
+//   define( 'SENTINEL_CAPTURE_ERRORS', false );
+//
+// To disable via filter (from a plugin):
+//   add_filter( 'sentinel_capture_errors', '__return_false' );
+//
+
+$sentinel_capture_errors = defined('SENTINEL_CAPTURE_ERRORS')
+    ? SENTINEL_CAPTURE_ERRORS
+    : apply_filters('sentinel_capture_errors', true);
+
+if ($sentinel_capture_errors) {
+
+    // ── Error handler (warnings, notices, deprecation) ──────────────────
+    //
+    // Captures the previous handler and delegates to it after logging,
+    // so debugging tools like Xdebug, Query Monitor, or other plugins
+    // that register their own error handlers continue to work.
+
+    $sentinel_previous_error_handler = set_error_handler(null);
+    restore_error_handler();
+
+    set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) use ($sentinel_previous_error_handler) {
+
+        // Respect error suppression with @
+        if (error_reporting() === 0) {
+            return false;
+        }
+
+        // Map PHP error constants to PSR-3 levels
+        static $map = [
+            E_WARNING           => Sentinel_Log_Level::WARNING,
+            E_USER_WARNING      => Sentinel_Log_Level::WARNING,
+            E_NOTICE            => Sentinel_Log_Level::NOTICE,
+            E_USER_NOTICE       => Sentinel_Log_Level::NOTICE,
+            E_DEPRECATED        => Sentinel_Log_Level::NOTICE,
+            E_USER_DEPRECATED   => Sentinel_Log_Level::NOTICE,
+            E_STRICT            => Sentinel_Log_Level::NOTICE,
+            E_USER_ERROR        => Sentinel_Log_Level::ERROR,
+            E_RECOVERABLE_ERROR => Sentinel_Log_Level::ERROR,
+        ];
+
+        $level = $map[$errno] ?? Sentinel_Log_Level::ERROR;
+
+        wp_log('php')->log(
+            $level,
+            $errstr,
+            [
+                'errno' => $errno,
+                'file'  => $errfile,
+                'line'  => $errline,
+            ]
+        );
+
+        // Chain to the previous error handler if one was registered
+        if ($sentinel_previous_error_handler !== null) {
+            return $sentinel_previous_error_handler($errno, $errstr, $errfile, $errline);
+        }
+
+        // Let PHP continue default handling
+        return false;
+    });
+
+    // ── Exception handler ───────────────────────────────────────────────
+    //
+    // Captures the previous handler and delegates to it after logging.
+    // If no previous handler exists, the exception will terminate the
+    // process (PHP's default behaviour for uncaught exceptions).
+
+    $sentinel_previous_exception_handler = set_exception_handler(null);
+    restore_exception_handler();
+
+    set_exception_handler(function (Throwable $e) use ($sentinel_previous_exception_handler) {
+        wp_log('php')->critical(
+            'Uncaught exception: {message}',
+            [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'trace'   => $e->getTraceAsString(),
+            ]
+        );
+
+        // Flush immediately — the process may terminate after this
+        wp_log_flush();
+
+        // Chain to the previous exception handler
+        if ($sentinel_previous_exception_handler !== null) {
+            $sentinel_previous_exception_handler($e);
+            return;
+        }
+
+        // No previous handler — PHP's default behaviour is to terminate,
+        // which will happen naturally when this handler returns for an
+        // uncaught exception (PHP 8.0+ re-throws internally).
+    });
+
+    // ── wp_die() handler ────────────────────────────────────────────────
+    //
+    // Uses a late-priority filter to wrap whatever handler is already
+    // registered (whether WordPress's default or another plugin's),
+    // rather than hardcoding _default_wp_die_handler. This ensures
+    // wp_die handlers registered at normal priority are preserved.
+
+    add_filter('wp_die_handler', function ($handler) {
+        return function ($message, $title = '', $args = []) use ($handler) {
+
+            wp_log('wp')->critical(
+                'wp_die: {message}',
+                [
+                    'message' => is_string($message) ? wp_strip_all_tags($message) : json_encode($message),
+                    'title'   => $title,
+                    'args'    => $args,
+                    'file'    => $args['file'] ?? null,
+                    'line'    => $args['line'] ?? null,
+                ]
+            );
+
+            // Flush immediately — wp_die typically terminates the process
+            wp_log_flush();
+
+            // Delegate to the previous handler (WordPress default or
+            // another plugin's handler)
+            if (is_callable($handler)) {
+                return call_user_func($handler, $message, $title, $args);
+            }
+
+            // Fallback if the previous handler is not callable
+            call_user_func('_default_wp_die_handler', $message, $title, $args);
+        };
+    }, 9999);
 }
