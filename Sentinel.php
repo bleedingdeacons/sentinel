@@ -5,9 +5,11 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 2.1.3
+ * Version: 2.1.4
  * Requires at least: 6.0
  * Requires PHP: 8.1
+ * GitHub Plugin URI: https://github.com/thebleedingdeacons/sentinel
+ * GitHub Branch: main
  * Author: The Bleeding Deacons
  * Author URI: https://github.com/bleedingdeacons/sentinel
  * Contact: thebleedingdeacons@gmail.com
