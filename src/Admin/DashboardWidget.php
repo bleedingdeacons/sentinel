@@ -132,7 +132,7 @@ class DashboardWidget
 
         wp_add_dashboard_widget(
             self::WIDGET_ID,
-            esc_html__('Intergroup Plugin Status', 'sentinel'),
+            esc_html__('Sentinel Status', 'sentinel'),
             [self::class, 'render']
         );
     }

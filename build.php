@@ -248,6 +248,9 @@ class PluginBuilder
         // Sync README.md version badge with plugin version
         $this->syncReadmeMarkdownVersion();
 
+        // Sync sentinel-logger.php version with plugin version
+        $this->syncLoggerVersion();
+
         // Create ZIP archive
         $this->createZip($archiveName, $excludes);
 
@@ -470,6 +473,41 @@ class PluginBuilder
             $this->log("Updated README.md version to {$this->version}");
         } else {
             $this->log("No **Version:** line found in README.md — skipping version sync");
+        }
+    }
+
+    /**
+     * Update the Version header in sentinel-logger.php to match the current plugin version
+     */
+    private function syncLoggerVersion(): void
+    {
+        $loggerFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'src'
+            . DIRECTORY_SEPARATOR . 'Logger' . DIRECTORY_SEPARATOR . 'sentinel-logger.php';
+
+        if (!file_exists($loggerFile)) {
+            $this->log("No sentinel-logger.php found — skipping version sync");
+            return;
+        }
+
+        $content = file_get_contents($loggerFile);
+        if ($content === false) {
+            $this->error("Failed to read sentinel-logger.php");
+            return;
+        }
+
+        $updated = preg_replace(
+            '/^(\s*\*\s*Version:\s*).+$/m',
+            '${1}' . $this->version,
+            $content,
+            1,
+            $count
+        );
+
+        if ($count > 0 && $updated !== null) {
+            file_put_contents($loggerFile, $updated);
+            $this->log("Updated sentinel-logger.php Version to {$this->version}");
+        } else {
+            $this->log("No Version header found in sentinel-logger.php — skipping version sync");
         }
     }
 
