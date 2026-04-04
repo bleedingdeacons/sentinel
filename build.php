@@ -176,7 +176,7 @@ class PluginBuilder
      */
     private function getVersionFromPlugin(): string
     {
-        $mainFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'Sentinel.php';
+        $mainFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'sentinel.php';
         if (file_exists($mainFile)) {
             $content = file_get_contents($mainFile);
             if (preg_match('/Version:\s*([0-9.]+\s*\w*)/', $content, $matches)) {
