@@ -30,12 +30,8 @@ if (!function_exists('get_plugin_data')) {
     }
 }
 
-if (function_exists('get_plugin_data')) {
-    $sentinel_plugin_data = get_plugin_data(__FILE__, false, false);
-    define('SENTINEL_VERSION', $sentinel_plugin_data['Version']);
-} else {
-    define('SENTINEL_VERSION', '1.0.0');
-}
+$sentinel_plugin_data = get_plugin_data(__FILE__, false, false);
+define('SENTINEL_VERSION', $sentinel_plugin_data['Version']);
 define('SENTINEL_PLUGIN_DIR', $sentinel_plugin_dir);
 define('SENTINEL_PLUGIN_URL', $sentinel_plugin_url);
 

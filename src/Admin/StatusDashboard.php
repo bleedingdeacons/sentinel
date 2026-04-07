@@ -67,7 +67,7 @@ class StatusDashboard
             'label' => 'Reconcile',
         ],
         'concordance' => [
-            'file'  => 'concordance/Concordance.php',
+            'file'  => 'concordance/concordance.php',
             'label' => 'Concordance',
         ],
     ];
