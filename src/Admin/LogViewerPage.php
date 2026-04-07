@@ -170,8 +170,8 @@ class LogViewerPage
             return false;
         }
         $table = \Sentinel_Logger::tableName();
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        return $wpdb->get_var("SHOW TABLES LIKE '{$table}'") === $table;
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        return $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) === $table;
     }
 
     /**
@@ -199,14 +199,16 @@ class LogViewerPage
 
         $table = $wpdb->prefix . 'sentinel_logs';
         $result['table_name'] = $table;
+        $escapedTable = '`' . esc_sql($table) . '`';
 
-        $sql = "SELECT COUNT(*) FROM `$table`";
-        $result['total_rows'] = (int) $wpdb->get_var($sql);
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $result['total_rows'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$escapedTable}");
 
         if ($result['total_rows'] === 0) {
             return $result;
         }
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
         $sql = "
         SELECT
             channel,
@@ -214,7 +216,7 @@ class LogViewerPage
             COUNT(*)       AS cnt,
             MIN(logged_at) AS first_seen,
             MAX(logged_at) AS last_seen
-        FROM `$table`
+        FROM {$escapedTable}
         GROUP BY channel, level
         ORDER BY last_seen DESC
     ";
@@ -228,8 +230,9 @@ class LogViewerPage
 
             $lastMessage = $wpdb->get_var(
                     $wpdb->prepare(
+                            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
                             "SELECT message
-                 FROM `$table`
+                 FROM {$escapedTable}
                  WHERE channel = %s AND level = %s
                  ORDER BY id DESC
                  LIMIT 1",
