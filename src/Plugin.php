@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use Sentinel\Admin\DashboardWidget;
+use Sentinel\Admin\StatusDashboard;
 use Sentinel\Admin\LogViewerPage;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Logger\HasLogger;
@@ -51,7 +51,7 @@ class Plugin
         if (is_admin()) {
             add_action('admin_menu', [self::class, 'registerTopLevelMenu']);
 
-            DashboardWidget::init();
+            StatusDashboard::init();
 
             try {
                 LogViewerPage::init();

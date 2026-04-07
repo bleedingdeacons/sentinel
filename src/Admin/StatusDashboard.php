@@ -20,7 +20,7 @@ use function wp_enqueue_style;
 use function wp_localize_script;
 
 /**
- * Class DashboardWidget
+ * Class StatusDashboard
  *
  * Registers a WordPress admin dashboard widget that displays the
  * version and activation status of monitored plugins.
@@ -28,7 +28,7 @@ use function wp_localize_script;
  * Includes an AJAX endpoint so the widget can refresh itself
  * without a full page reload.
  */
-class DashboardWidget
+class StatusDashboard
 {
     private const WIDGET_ID   = 'sentinel_plugin_status';
     private const AJAX_ACTION = 'sentinel_refresh_status';
@@ -43,7 +43,7 @@ class DashboardWidget
      */
     private const PLUGINS = [
         'unity' => [
-            'file'  => 'unity/Unity.php',
+            'file'  => 'unity/unity.php',
             'label' => 'Unity',
         ],
         'tsml-for-unity' => [
@@ -51,11 +51,11 @@ class DashboardWidget
             'label' => 'TSML for Unity',
         ],
         'scrutiny' => [
-            'file'  => 'scrutiny/Scrutiny.php',
+            'file'  => 'scrutiny/scrutiny.php',
             'label' => 'Scrutiny',
         ],
         'amber' => [
-            'file'  => 'amber/Amber.php',
+            'file'  => 'amber/amber.php',
             'label' => 'Amber',
         ],
         'integrity' => [
