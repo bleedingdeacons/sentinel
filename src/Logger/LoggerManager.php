@@ -127,8 +127,9 @@ class LoggerManager
     {
         foreach (self::LEGACY_MU_FILENAMES as $legacy) {
             $path = WPMU_PLUGIN_DIR . '/' . $legacy;
-            if (file_exists($path)) {
-                @unlink($path);
+            if (file_exists($path) && !unlink($path)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                error_log('Sentinel: Failed to remove legacy mu-plugin: ' . $path);
             }
         }
     }
@@ -141,8 +142,9 @@ class LoggerManager
     public static function remove(): void
     {
         $dest = self::destinationPath();
-        if (file_exists($dest)) {
-            @unlink($dest);
+        if (file_exists($dest) && !unlink($dest)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log('Sentinel: Failed to remove logger mu-plugin: ' . $dest);
         }
     }
 
