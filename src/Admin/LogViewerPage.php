@@ -185,68 +185,71 @@ class LogViewerPage
      */
     private static function getAggregateData(): array
     {
+        global $wpdb;
+
         $result = [
-            'aggregates' => [],
-            'total_rows' => 0,
-            'table_name' => null,
+                'aggregates' => [],
+                'total_rows' => 0,
+                'table_name' => null,
         ];
 
         if (!self::tableExists()) {
             return $result;
         }
 
-        global $wpdb;
-        $table = \Sentinel_Logger::tableName();
+        $table = $wpdb->prefix . 'sentinel_logs';
         $result['table_name'] = $table;
 
-        // Total row count
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $result['total_rows'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        $sql = "SELECT COUNT(*) FROM `$table`";
+        $result['total_rows'] = (int) $wpdb->get_var($sql);
 
         if ($result['total_rows'] === 0) {
             return $result;
         }
 
-        // Aggregate by channel + level, keeping last message and timestamps
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $rows = $wpdb->get_results("
-            SELECT
-                channel,
-                level,
-                COUNT(*)            AS cnt,
-                MIN(logged_at)      AS first_seen,
-                MAX(logged_at)      AS last_seen
-            FROM {$table}
-            GROUP BY channel, level
-            ORDER BY last_seen DESC
-        ");
+        $sql = "
+        SELECT
+            channel,
+            level,
+            COUNT(*)       AS cnt,
+            MIN(logged_at) AS first_seen,
+            MAX(logged_at) AS last_seen
+        FROM `$table`
+        GROUP BY channel, level
+        ORDER BY last_seen DESC
+    ";
 
+        $rows = $wpdb->get_results($sql);
         if (!$rows) {
             return $result;
         }
 
         foreach ($rows as $row) {
-            // Fetch the most recent message for this group
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-            $lastMessage = $wpdb->get_var($wpdb->prepare(
-                "SELECT message FROM {$table} WHERE channel = %s AND level = %s ORDER BY id DESC LIMIT 1",
-                $row->channel,
-                $row->level
-            ));
+
+            $lastMessage = $wpdb->get_var(
+                    $wpdb->prepare(
+                            "SELECT message
+                 FROM `$table`
+                 WHERE channel = %s AND level = %s
+                 ORDER BY id DESC
+                 LIMIT 1",
+                            $row->channel,
+                            $row->level
+                    )
+            );
 
             $result['aggregates'][] = [
-                'channel'      => $row->channel,
-                'level'        => $row->level,
-                'count'        => (int) $row->cnt,
-                'first_seen'   => $row->first_seen,
-                'last_seen'    => $row->last_seen,
-                'last_message' => $lastMessage ?: '',
+                    'channel'      => $row->channel,
+                    'level'        => $row->level,
+                    'count'        => (int) $row->cnt,
+                    'first_seen'   => $row->first_seen,
+                    'last_seen'    => $row->last_seen,
+                    'last_message' => $lastMessage ?: '',
             ];
         }
 
         return $result;
     }
-
     /**
      * Render the aggregate table HTML (used for both full page and AJAX).
      */
