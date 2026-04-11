@@ -197,7 +197,7 @@ class LogViewerPage
             return $result;
         }
 
-        $table = $wpdb->prefix . 'sentinel_logs';
+        $table = \Sentinel_Logger::tableName();
         $result['table_name'] = $table;
         $escapedTable = '`' . esc_sql($table) . '`';
 
