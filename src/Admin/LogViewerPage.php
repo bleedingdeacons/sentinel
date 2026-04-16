@@ -68,12 +68,12 @@ class LogViewerPage
     public static function registerPage(): void
     {
         self::$hookSuffix = (string) add_submenu_page(
-            Plugin::MENU_SLUG,
-            self::PAGE_TITLE,
-            self::MENU_TITLE,
-            self::CAPABILITY,
-            self::PAGE_SLUG,
-            [self::class, 'renderPage']
+                Plugin::MENU_SLUG,
+                self::PAGE_TITLE,
+                self::MENU_TITLE,
+                self::CAPABILITY,
+                self::PAGE_SLUG,
+                [self::class, 'renderPage']
         );
     }
 
@@ -87,24 +87,24 @@ class LogViewerPage
         }
 
         wp_enqueue_style(
-            'sentinel-log-viewer',
-            SENTINEL_PLUGIN_URL . 'assets/log-viewer.css',
-            [],
-            SENTINEL_VERSION
+                'sentinel-log-viewer',
+                SENTINEL_PLUGIN_URL . 'assets/log-viewer.css',
+                [],
+                SENTINEL_VERSION
         );
 
         wp_enqueue_script(
-            'sentinel-log-viewer',
-            SENTINEL_PLUGIN_URL . 'assets/log-viewer.js',
-            [],
-            SENTINEL_VERSION,
-            true
+                'sentinel-log-viewer',
+                SENTINEL_PLUGIN_URL . 'assets/log-viewer.js',
+                [],
+                SENTINEL_VERSION,
+                true
         );
 
         wp_localize_script('sentinel-log-viewer', 'sentinelLogViewer', [
-            'url'    => admin_url('admin-ajax.php'),
-            'action' => self::AJAX_ACTION,
-            'nonce'  => wp_create_nonce(self::AJAX_ACTION),
+                'url'    => admin_url('admin-ajax.php'),
+                'action' => self::AJAX_ACTION,
+                'nonce'  => wp_create_nonce(self::AJAX_ACTION),
         ]);
     }
 
@@ -128,10 +128,10 @@ class LogViewerPage
         }
 
         wp_safe_redirect(
-            add_query_arg(
-                ['page' => self::PAGE_SLUG, 'cleared' => '1'],
-                admin_url('admin.php')
-            )
+                add_query_arg(
+                        ['page' => self::PAGE_SLUG, 'cleared' => '1'],
+                        admin_url('admin.php')
+                )
         );
         exit;
     }
@@ -178,7 +178,7 @@ class LogViewerPage
      * Query the database and return aggregate data.
      *
      * @return array{
-     *     aggregates: list<array{channel: string, level: string, count: int, last_seen: string, last_message: string, first_seen: string}>,
+     *     aggregates: list<array{channel: string, level: string, count: int, last_seen: string, last_message: string, last_context: string, first_seen: string}>,
      *     total_rows: int,
      *     table_name: string|null
      * }
@@ -228,10 +228,10 @@ class LogViewerPage
 
         foreach ($rows as $row) {
 
-            $lastMessage = $wpdb->get_var(
+            $latest = $wpdb->get_row(
                     $wpdb->prepare(
-                            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
-                            "SELECT message
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+                            "SELECT message, context
                  FROM {$escapedTable}
                  WHERE channel = %s AND level = %s
                  ORDER BY id DESC
@@ -241,6 +241,9 @@ class LogViewerPage
                     )
             );
 
+            $lastMessage = $latest->message ?? '';
+            $lastContext = $latest->context ?? '';
+
             $result['aggregates'][] = [
                     'channel'      => $row->channel,
                     'level'        => $row->level,
@@ -248,6 +251,7 @@ class LogViewerPage
                     'first_seen'   => $row->first_seen,
                     'last_seen'    => $row->last_seen,
                     'last_message' => $lastMessage ?: '',
+                    'last_context' => $lastContext ?: '',
             ];
         }
 
@@ -283,44 +287,57 @@ class LogViewerPage
 
         <table class="sentinel-log-table widefat striped">
             <thead>
-                <tr>
-                    <th class="sentinel-log-col-level"><?php esc_html_e('Level', 'sentinel'); ?></th>
-                    <th class="sentinel-log-col-channel"><?php esc_html_e('Channel', 'sentinel'); ?></th>
-                    <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
-                    <th class="sentinel-log-col-time"><?php esc_html_e('Last Seen', 'sentinel'); ?></th>
-                </tr>
+            <tr>
+                <th class="sentinel-log-col-level"><?php esc_html_e('Level', 'sentinel'); ?></th>
+                <th class="sentinel-log-col-channel"><?php esc_html_e('Channel', 'sentinel'); ?></th>
+                <th class="sentinel-log-col-count"><?php esc_html_e('Count', 'sentinel'); ?></th>
+                <th class="sentinel-log-col-time"><?php esc_html_e('Last Seen', 'sentinel'); ?></th>
+            </tr>
             </thead>
             <tbody>
-                <?php foreach ($aggregates as $entry): ?>
-                    <tbody class="sentinel-log-group"
-                        data-level="<?php echo esc_attr(strtoupper($entry['level'])); ?>"
-                        data-channel="<?php echo esc_attr($entry['channel']); ?>"
-                        data-count="<?php echo esc_attr(number_format($entry['count'])); ?>"
-                        data-last-seen="<?php echo esc_attr($entry['last_seen']); ?>"
-                        data-message="<?php echo esc_attr($entry['last_message']); ?>">
-                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
-                        <td class="sentinel-log-col-level">
+            <?php foreach ($aggregates as $entry): ?>
+            <tbody class="sentinel-log-group"
+                   data-level="<?php echo esc_attr(strtoupper($entry['level'])); ?>"
+                   data-channel="<?php echo esc_attr($entry['channel']); ?>"
+                   data-count="<?php echo esc_attr(number_format($entry['count'])); ?>"
+                   data-last-seen="<?php echo esc_attr($entry['last_seen']); ?>"
+                   data-message="<?php echo esc_attr($entry['last_message']); ?>">
+            <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
+                <td class="sentinel-log-col-level">
                             <span class="sentinel-badge sentinel-badge--<?php echo esc_attr($entry['level']); ?>">
                                 <?php echo esc_html(strtoupper($entry['level'])); ?>
                             </span>
-                        </td>
-                        <td class="sentinel-log-col-channel">
-                            <code><?php echo esc_html($entry['channel']); ?></code>
-                        </td>
-                        <td class="sentinel-log-col-count">
-                            <span class="sentinel-log-count"><?php echo esc_html(number_format($entry['count'])); ?></span>
-                        </td>
-                        <td class="sentinel-log-col-time">
-                            <span class="sentinel-log-time"><?php echo esc_html($entry['last_seen']); ?></span>
-                        </td>
-                    </tr>
-                    <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-message">
-                        <td colspan="4" class="sentinel-log-col-message">
-                            <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
-                        </td>
-                    </tr>
-                    </tbody>
-                <?php endforeach; ?>
+                </td>
+                <td class="sentinel-log-col-channel">
+                    <code><?php echo esc_html($entry['channel']); ?></code>
+                </td>
+                <td class="sentinel-log-col-count">
+                    <span class="sentinel-log-count"><?php echo esc_html(number_format($entry['count'])); ?></span>
+                </td>
+                <td class="sentinel-log-col-time">
+                    <span class="sentinel-log-time"><?php echo esc_html($entry['last_seen']); ?></span>
+                </td>
+            </tr>
+            <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-message">
+                <td colspan="4" class="sentinel-log-col-message">
+                    <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
+                </td>
+            </tr>
+            <?php if ($entry['last_context'] !== ''):
+                // Pretty-print JSON context when possible so it's readable when expanded.
+                $decoded = json_decode($entry['last_context'], true);
+                $prettyContext = (json_last_error() === JSON_ERROR_NONE && $decoded !== null)
+                        ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                        : $entry['last_context'];
+                ?>
+                <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-context">
+                    <td colspan="4" class="sentinel-log-col-context">
+                        <pre class="sentinel-log-context-body"><?php echo esc_html($prettyContext); ?></pre>
+                    </td>
+                </tr>
+            <?php endif; ?>
+            </tbody>
+            <?php endforeach; ?>
             </tbody>
         </table>
         <?php
