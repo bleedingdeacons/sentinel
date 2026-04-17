@@ -148,6 +148,7 @@ class StatusDashboard
 
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Unauthorized', 403);
+            return;
         }
 
         ob_start();
