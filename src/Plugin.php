@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 use Sentinel\Admin\StatusDashboard;
 use Sentinel\Admin\LogViewerPage;
 use Sentinel\Admin\SettingsPage;
+use Sentinel\Admin\UnityControlPage;
 use Sentinel\Logger\HasLogger;
 
 /**
@@ -60,6 +61,7 @@ class Plugin
             }
 
             SettingsPage::init();
+            UnityControlPage::init();
         }
         self::logDebug('Initialised', ['version' => defined('SENTINEL_VERSION') ? SENTINEL_VERSION : 'unknown']);
     }
