@@ -37,8 +37,8 @@ use function wp_nonce_field;
  *
  * When UNITY_KILL is true Unity short-circuits during boot — no constants,
  * no autoloader, no hooks — and every dependent plugin (TSML for Unity,
- * Scrutiny, Amber, Integrity, Reconcile, Concordance) stands down because
- * the `unity/loaded` action never fires.
+ * Scrutiny, Amber, Integrity, Reconcile) stands down because the
+ * `unity/loaded` action never fires.
  *
  * Changes take effect on the next request, since wp-config.php is included
  * before plugins on the request that performs the write.
@@ -66,6 +66,9 @@ class UnityControlPage
      * Plugins that depend on Unity and will stop working when the kill
      * switch is engaged. Used in the warning copy on the page.
      *
+     * Concordance is intentionally not in this list: it does not depend
+     * on Unity.
+     *
      * @var list<string>
      */
     private const DEPENDENT_PLUGINS = [
@@ -74,7 +77,6 @@ class UnityControlPage
         'Amber',
         'Integrity',
         'Reconcile',
-        'Concordance',
     ];
 
     /** @var string The hook suffix returned by add_submenu_page(). */
@@ -155,7 +157,7 @@ class UnityControlPage
                 add_settings_error(
                     'sentinel_unity_control',
                     'kill_switch_enabled',
-                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Concordance) will stand down.', 'sentinel'),
+                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile) will stand down.', 'sentinel'),
                     'updated'
                 );
             } else {

@@ -34,6 +34,25 @@ class StatusDashboard
     private const AJAX_ACTION = 'sentinel_refresh_status';
 
     /**
+     * Plugin keys (matching the keys of PLUGINS) whose functionality
+     * depends on Unity having booted. When UNITY_KILL is engaged, Unity
+     * short-circuits before firing the `unity/loaded` action, so these
+     * plugins cannot function — regardless of their own active state.
+     *
+     * Concordance is intentionally not in this list: it does not depend
+     * on Unity.
+     *
+     * @var list<string>
+     */
+    private const UNITY_DEPENDENTS = [
+        'tsml-for-unity',
+        'scrutiny',
+        'amber',
+        'integrity',
+        'reconcile',
+    ];
+
+    /**
      * Plugin registry - each entry defines a monitored plugin.
      *
      * The 'file' path is relative to WP_PLUGIN_DIR and must match
@@ -178,6 +197,17 @@ class StatusDashboard
             $plugins['unity']['killSwitch'] = $unityKilled && $plugins['unity']['installed'];
         }
 
+        // When the kill switch is engaged, mark every Unity-dependent plugin
+        // as unavailable so the row reflects what's actually happening on
+        // the site rather than WordPress's view of the active_plugins list.
+        if ($unityKilled) {
+            foreach (self::UNITY_DEPENDENTS as $dependentKey) {
+                if (isset($plugins[$dependentKey]) && $plugins[$dependentKey]['installed']) {
+                    $plugins[$dependentKey]['unavailable'] = true;
+                }
+            }
+        }
+
         // Overall health:
         //   error   – Unity kill switch is set, or any plugin is not installed
         //   warn    – all installed but some inactive
@@ -246,6 +276,10 @@ class StatusDashboard
                                     <span class="sentinel-badge sentinel-badge--killed" title="<?php echo esc_attr__('UNITY_KILL is defined as true in wp-config.php', 'sentinel'); ?>">
                                         <?php esc_html_e('Disabled (Kill Switch)', 'sentinel'); ?>
                                     </span>
+                                <?php elseif (!empty($info['unavailable'])): ?>
+                                    <span class="sentinel-badge sentinel-badge--warn" title="<?php echo esc_attr__('Unity is disabled, so this plugin cannot function.', 'sentinel'); ?>">
+                                        <?php esc_html_e('Unavailable', 'sentinel'); ?>
+                                    </span>
                                 <?php elseif ($info['active']): ?>
                                     <span class="sentinel-badge sentinel-badge--active">
                                         <?php esc_html_e('Active', 'sentinel'); ?>
@@ -266,7 +300,14 @@ class StatusDashboard
             </table>
 
             <?php
-            $inactive = array_filter($plugins, fn($p) => $p['installed'] && !$p['active']);
+            // When the kill switch is on, dependents shown as "Unavailable"
+            // shouldn't also appear in the "X is installed but not active"
+            // help block — that advice (activate from the Plugins page)
+            // doesn't apply while Unity is dead.
+            $inactive = array_filter(
+                $plugins,
+                fn($p) => $p['installed'] && !$p['active'] && empty($p['unavailable'])
+            );
             $missing  = array_filter($plugins, fn($p) => !$p['installed']);
             ?>
 
@@ -276,7 +317,7 @@ class StatusDashboard
                     <?php
                     printf(
                         esc_html__(
-                            '%1$s is defined as %2$s in %3$s, which prevents Unity from booting. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Concordance) will not function until this is cleared.',
+                            '%1$s is defined as %2$s in %3$s, which prevents Unity from booting. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile) will not function until this is cleared.',
                             'sentinel'
                         ),
                         '<code>UNITY_KILL</code>',
@@ -333,9 +374,9 @@ class StatusDashboard
      * Reads the version from the plugin file header (via get_plugin_data)
      * so it is available even when the plugin is inactive.
      *
-     * The `killSwitch` key is added by render() for plugins that support
-     * a kill switch (currently Unity via UNITY_KILL); it is not populated
-     * here.
+     * Two optional keys are added by render() and are not populated here:
+     *   - `killSwitch`  — true when Unity's UNITY_KILL is engaged (Unity row only)
+     *   - `unavailable` — true for Unity-dependent plugins when UNITY_KILL is engaged
      *
      * @param array{file: string, label: string} $definition
      * @return array{installed: bool, active: bool, version: string, label: string}
