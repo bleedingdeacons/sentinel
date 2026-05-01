@@ -170,8 +170,16 @@ class StatusDashboard
             $plugins[$key] = self::getPluginStatus($definition);
         }
 
+        // Unity's UNITY_KILL kill switch short-circuits its boot, so even
+        // though WordPress still reports it as active, none of its hooks fire
+        // and every dependent plugin stands down. Flag it on the Unity row.
+        $unityKilled = defined('UNITY_KILL') && UNITY_KILL === true;
+        if (isset($plugins['unity'])) {
+            $plugins['unity']['killSwitch'] = $unityKilled && $plugins['unity']['installed'];
+        }
+
         // Overall health:
-        //   error   – any plugin is not installed
+        //   error   – Unity kill switch is set, or any plugin is not installed
         //   warn    – all installed but some inactive
         //   healthy – every plugin installed and active
         $anyMissing  = false;
@@ -184,7 +192,12 @@ class StatusDashboard
             }
         }
 
-        if ($anyMissing) {
+        if (!empty($plugins['unity']['killSwitch'])) {
+            // Take precedence: with Unity dormant, dependent plugins won't
+            // function regardless of their own active/inactive state.
+            $overallHealth = 'error';
+            $overallLabel  = __('Unity Disabled — Kill Switch Active', 'sentinel');
+        } elseif ($anyMissing) {
             $overallHealth = 'error';
             $overallLabel  = __('Plugins Missing', 'sentinel');
         } elseif ($anyInactive) {
@@ -229,7 +242,11 @@ class StatusDashboard
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($info['active']): ?>
+                                <?php if (!empty($info['killSwitch'])): ?>
+                                    <span class="sentinel-badge sentinel-badge--killed" title="<?php echo esc_attr__('UNITY_KILL is defined as true in wp-config.php', 'sentinel'); ?>">
+                                        <?php esc_html_e('Disabled (Kill Switch)', 'sentinel'); ?>
+                                    </span>
+                                <?php elseif ($info['active']): ?>
                                     <span class="sentinel-badge sentinel-badge--active">
                                         <?php esc_html_e('Active', 'sentinel'); ?>
                                     </span>
@@ -251,8 +268,26 @@ class StatusDashboard
             <?php
             $inactive = array_filter($plugins, fn($p) => $p['installed'] && !$p['active']);
             $missing  = array_filter($plugins, fn($p) => !$p['installed']);
+            ?>
 
-            if (!empty($inactive)): ?>
+            <?php if (!empty($plugins['unity']['killSwitch'])): ?>
+                <p class="sentinel-help sentinel-help--alert">
+                    <strong><?php esc_html_e('Unity is disabled.', 'sentinel'); ?></strong>
+                    <?php
+                    printf(
+                        esc_html__(
+                            '%1$s is defined as %2$s in %3$s, which prevents Unity from booting. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Concordance) will not function until this is cleared.',
+                            'sentinel'
+                        ),
+                        '<code>UNITY_KILL</code>',
+                        '<code>true</code>',
+                        '<code>wp-config.php</code>'
+                    );
+                    ?>
+                </p>
+            <?php endif; ?>
+
+            <?php if (!empty($inactive)): ?>
                 <p class="sentinel-help">
                     <?php
                     $names = implode(', ', array_column($inactive, 'label'));
@@ -297,6 +332,10 @@ class StatusDashboard
      *
      * Reads the version from the plugin file header (via get_plugin_data)
      * so it is available even when the plugin is inactive.
+     *
+     * The `killSwitch` key is added by render() for plugins that support
+     * a kill switch (currently Unity via UNITY_KILL); it is not populated
+     * here.
      *
      * @param array{file: string, label: string} $definition
      * @return array{installed: bool, active: bool, version: string, label: string}
