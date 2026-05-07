@@ -119,6 +119,7 @@
      * Copy entry data to clipboard.
      * Line 1: level \t channel \t count \t last_seen
      * Line 2: message
+     * Following lines (if context present): the pretty-printed context
      *
      * If Ctrl (or Cmd) is held, append to an internal buffer and write
      * all accumulated entries to clipboard. Plain click resets the buffer.
@@ -133,8 +134,12 @@
         var count    = group.getAttribute('data-count')     || '';
         var lastSeen = group.getAttribute('data-last-seen') || '';
         var message  = group.getAttribute('data-message')   || '';
+        var context  = group.getAttribute('data-context')   || '';
 
         var newText = level + '\t' + channel + '\t' + count + '\t' + lastSeen + '\n' + message;
+        if (context) {
+            newText += '\n' + context;
+        }
         var append  = e && (e.ctrlKey || e.metaKey);
 
         if (append && clipBuffer) {

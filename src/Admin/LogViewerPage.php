@@ -296,13 +296,24 @@ class LogViewerPage
             </tr>
             </thead>
             <tbody>
-            <?php foreach ($aggregates as $entry): ?>
+            <?php foreach ($aggregates as $entry):
+                // Pretty-print JSON context when possible so it's readable when expanded
+                // and when copied to clipboard. Falls back to the raw stored value.
+                $prettyContext = '';
+                if ($entry['last_context'] !== '') {
+                    $decoded = json_decode($entry['last_context'], true);
+                    $prettyContext = (json_last_error() === JSON_ERROR_NONE && $decoded !== null)
+                            ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                            : $entry['last_context'];
+                }
+                ?>
             <tbody class="sentinel-log-group"
                    data-level="<?php echo esc_attr(strtoupper($entry['level'])); ?>"
                    data-channel="<?php echo esc_attr($entry['channel']); ?>"
                    data-count="<?php echo esc_attr(number_format($entry['count'])); ?>"
                    data-last-seen="<?php echo esc_attr($entry['last_seen']); ?>"
-                   data-message="<?php echo esc_attr($entry['last_message']); ?>">
+                   data-message="<?php echo esc_attr($entry['last_message']); ?>"
+                   data-context="<?php echo esc_attr($prettyContext); ?>">
             <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-header">
                 <td class="sentinel-log-col-level">
                             <span class="sentinel-badge sentinel-badge--<?php echo esc_attr($entry['level']); ?>">
@@ -324,13 +335,7 @@ class LogViewerPage
                     <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
                 </td>
             </tr>
-            <?php if ($entry['last_context'] !== ''):
-                // Pretty-print JSON context when possible so it's readable when expanded.
-                $decoded = json_decode($entry['last_context'], true);
-                $prettyContext = (json_last_error() === JSON_ERROR_NONE && $decoded !== null)
-                        ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                        : $entry['last_context'];
-                ?>
+            <?php if ($entry['last_context'] !== ''): ?>
                 <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-context">
                     <td colspan="4" class="sentinel-log-col-context">
                         <pre class="sentinel-log-context-body"><?php echo esc_html($prettyContext); ?></pre>
