@@ -401,7 +401,7 @@ class LogViewerPage
                             </span>
                         </label>
                         <button type="button" class="button" id="sentinel-refresh-log">
-                            <span class="dashicons dashicons-update" style="vertical-align: middle; margin-top: -2px;"></span>
+                            <span class="dashicons dashicons-update"></span>
                             <?php esc_html_e('Refresh', 'sentinel'); ?>
                         </button>
                         <?php if ($tableExists && $data['total_rows'] > 0): ?>
@@ -412,7 +412,7 @@ class LogViewerPage
                                         value="1"
                                         class="button button-secondary sentinel-clear-btn"
                                         onclick="return confirm('<?php echo esc_attr__('Are you sure you want to clear all log entries? This cannot be undone.', 'sentinel'); ?>');">
-                                    <span class="dashicons dashicons-trash" style="vertical-align: middle; margin-top: -2px;"></span>
+                                    <span class="dashicons dashicons-trash"></span>
                                     <?php esc_html_e('Clear Log', 'sentinel'); ?>
                                 </button>
                             </form>

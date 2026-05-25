@@ -42,6 +42,23 @@
     background: #fcf0f1 !important;
 }
 
+/* Vertically center dashicons inside the action buttons.
+   WP's .button is line-height based, and .dashicons has its own font metrics,
+   so the icon sits a few pixels off without flex alignment. */
+.sentinel-log-actions .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sentinel-log-actions .button .dashicons {
+    line-height: 1;
+    /* dashicons are 20×20; the button's natural height is ~28px so this just
+       lets flex center it without the font metric pushing it down. */
+    height: auto;
+    width: auto;
+}
+
 /* Summary Stats
    ========================================================================== */
 
@@ -150,6 +167,34 @@
     font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
     font-size: 12px;
     color: #1d2327;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Expanded JSON context (stack traces, etc.) – wrap long single-line content
+   so it doesn't stretch the row. */
+.sentinel-log-col-context {
+    /* Belt-and-braces: keep the cell from forcing the table wider. */
+    max-width: 0;
+    width: 100%;
+}
+
+.sentinel-log-context-body {
+    margin: 0;
+    padding: 12px;
+    background: #f6f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #1d2327;
+    /* Preserve <pre> newlines but also wrap long unbreakable strings like
+       file paths and \n-escaped trace blobs. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .sentinel-log-time {
