@@ -47,6 +47,39 @@ class SettingsPage
     public const OPTION_DROP_TABLE = 'sentinel_drop_table_on_uninstall';
 
     /**
+     * Option key: list of mandatory monitored plugins (one entry per line).
+     * Mandatory plugins are always shown in the dashboard widget and
+     * contribute to the overall stability indicator.
+     */
+    public const OPTION_MANDATORY_PLUGINS = 'sentinel_mandatory_plugins';
+
+    /**
+     * Option key: list of optional monitored plugins (one entry per line).
+     * Optional plugins are only shown when installed and never affect
+     * the overall stability indicator.
+     */
+    public const OPTION_OPTIONAL_PLUGINS = 'sentinel_optional_plugins';
+
+    /**
+     * Default mandatory plugin list (used when the option has never been set).
+     * Mirrors the historical hardcoded list so behaviour is preserved on upgrade.
+     */
+    private const DEFAULT_MANDATORY_PLUGINS = <<<TXT
+unity/unity.php|Unity
+tsml-for-unity/tsml-for-unity.php|TSML for Unity
+scrutiny/scrutiny.php|Scrutiny
+amber/amber.php|Amber
+integrity/integrity.php|Integrity
+reconcile/reconcile.php|Reconcile
+concordance/concordance.php|Concordance
+TXT;
+
+    /**
+     * Default optional plugin list (empty by default).
+     */
+    private const DEFAULT_OPTIONAL_PLUGINS = '';
+
+    /**
      * Nonce action for saving logger configuration.
      */
     private const NONCE_ACTION = 'sentinel_logger_config';
@@ -151,6 +184,43 @@ class SettingsPage
                 'default'           => '',
         ]);
 
+        register_setting('sentinel_settings_group', self::OPTION_MANDATORY_PLUGINS, [
+                'type'              => 'string',
+                'sanitize_callback' => [self::class, 'sanitizePluginList'],
+                'default'           => self::DEFAULT_MANDATORY_PLUGINS,
+        ]);
+
+        register_setting('sentinel_settings_group', self::OPTION_OPTIONAL_PLUGINS, [
+                'type'              => 'string',
+                'sanitize_callback' => [self::class, 'sanitizePluginList'],
+                'default'           => self::DEFAULT_OPTIONAL_PLUGINS,
+        ]);
+
+        // ── Monitored Plugins section ────────────────────────────────────────
+        add_settings_section(
+                'sentinel_monitored_plugins_section',
+                __('Monitored Plugins', 'sentinel'),
+                [self::class, 'renderMonitoredPluginsSectionDescription'],
+                self::PAGE_SLUG
+        );
+
+        add_settings_field(
+                self::OPTION_MANDATORY_PLUGINS,
+                __('Mandatory plugins', 'sentinel'),
+                [self::class, 'renderMandatoryPluginsField'],
+                self::PAGE_SLUG,
+                'sentinel_monitored_plugins_section'
+        );
+
+        add_settings_field(
+                self::OPTION_OPTIONAL_PLUGINS,
+                __('Optional plugins', 'sentinel'),
+                [self::class, 'renderOptionalPluginsField'],
+                self::PAGE_SLUG,
+                'sentinel_monitored_plugins_section'
+        );
+
+        // ── Uninstall Behaviour section ──────────────────────────────────────
         add_settings_section(
                 'sentinel_uninstall_section',
                 __('Uninstall Behaviour', 'sentinel'),
@@ -165,6 +235,173 @@ class SettingsPage
                 self::PAGE_SLUG,
                 'sentinel_uninstall_section'
         );
+    }
+
+    /**
+     * Sanitize the plugin-list textarea: trim each line, strip blanks and comments.
+     */
+    public static function sanitizePluginList($value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        // Normalise line endings, then strip blank lines and comment lines.
+        $value = str_replace(["\r\n", "\r"], "\n", $value);
+        $lines = explode("\n", $value);
+        $clean = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+            // sanitize_text_field strips control chars but preserves the pipe
+            // and slash characters we need.
+            $clean[] = sanitize_text_field($line);
+        }
+        return implode("\n", $clean);
+    }
+
+    /**
+     * Section description callback for the Monitored Plugins section.
+     */
+    public static function renderMonitoredPluginsSectionDescription(): void
+    {
+        echo '<p class="description">';
+        esc_html_e(
+                'Configure which plugins the Sentinel dashboard widget monitors. '
+                . 'Enter one plugin per line in the format "folder/file.php|Label" '
+                . '(the "|Label" part is optional and defaults to the folder name). '
+                . 'Blank lines and lines starting with "#" are ignored.',
+                'sentinel'
+        );
+        echo '</p>';
+    }
+
+    /**
+     * Render the mandatory plugins textarea.
+     */
+    public static function renderMandatoryPluginsField(): void
+    {
+        $value = get_option(self::OPTION_MANDATORY_PLUGINS, self::DEFAULT_MANDATORY_PLUGINS);
+        ?>
+        <textarea
+                id="<?php echo esc_attr(self::OPTION_MANDATORY_PLUGINS); ?>"
+                name="<?php echo esc_attr(self::OPTION_MANDATORY_PLUGINS); ?>"
+                rows="8"
+                cols="60"
+                class="large-text code"
+        ><?php echo esc_textarea($value); ?></textarea>
+        <p class="description">
+            <?php esc_html_e(
+                    'Always shown in the dashboard widget. Missing or inactive entries here drive the overall stability indicator.',
+                    'sentinel'
+            ); ?>
+        </p>
+        <?php
+    }
+
+    /**
+     * Render the optional plugins textarea.
+     */
+    public static function renderOptionalPluginsField(): void
+    {
+        $value = get_option(self::OPTION_OPTIONAL_PLUGINS, self::DEFAULT_OPTIONAL_PLUGINS);
+        ?>
+        <textarea
+                id="<?php echo esc_attr(self::OPTION_OPTIONAL_PLUGINS); ?>"
+                name="<?php echo esc_attr(self::OPTION_OPTIONAL_PLUGINS); ?>"
+                rows="8"
+                cols="60"
+                class="large-text code"
+        ><?php echo esc_textarea($value); ?></textarea>
+        <p class="description">
+            <?php esc_html_e(
+                    'Only shown in the dashboard widget when installed. Never affects the overall stability indicator.',
+                    'sentinel'
+            ); ?>
+        </p>
+        <?php
+    }
+
+    /**
+     * Parse a stored plugin-list option into the {key => [file, label]} shape
+     * that StatusDashboard uses. Returns an empty array for empty input.
+     *
+     * @return array<string, array{file: string, label: string}>
+     */
+    private static function parsePluginList(string $text): array
+    {
+        $result = [];
+        if ($text === '') {
+            return $result;
+        }
+
+        $text  = str_replace(["\r\n", "\r"], "\n", $text);
+        $lines = explode("\n", $text);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+
+            // Format: "folder/file.php|Label" — label is optional.
+            $parts = explode('|', $line, 2);
+            $file  = trim($parts[0]);
+            $label = isset($parts[1]) ? trim($parts[1]) : '';
+
+            if ($file === '') {
+                continue;
+            }
+
+            // Derive a key from the folder name (the segment before the first slash).
+            $slashPos = strpos($file, '/');
+            $key      = $slashPos === false ? $file : substr($file, 0, $slashPos);
+            $key      = sanitize_key($key);
+
+            if ($key === '') {
+                continue;
+            }
+
+            // Fall back to a humanised version of the folder name when no label is given.
+            if ($label === '') {
+                $label = ucwords(str_replace(['-', '_'], ' ', $key));
+            }
+
+            // First occurrence wins; later duplicates are ignored.
+            if (!isset($result[$key])) {
+                $result[$key] = [
+                    'file'  => $file,
+                    'label' => $label,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get the configured mandatory plugins (parsed into the same shape
+     * StatusDashboard's old PLUGINS constant used).
+     *
+     * @return array<string, array{file: string, label: string}>
+     */
+    public static function getMandatoryPlugins(): array
+    {
+        $text = (string) get_option(self::OPTION_MANDATORY_PLUGINS, self::DEFAULT_MANDATORY_PLUGINS);
+        return self::parsePluginList($text);
+    }
+
+    /**
+     * Get the configured optional plugins.
+     *
+     * @return array<string, array{file: string, label: string}>
+     */
+    public static function getOptionalPlugins(): array
+    {
+        $text = (string) get_option(self::OPTION_OPTIONAL_PLUGINS, self::DEFAULT_OPTIONAL_PLUGINS);
+        return self::parsePluginList($text);
     }
 
     /**

@@ -19,6 +19,8 @@ use function wp_enqueue_script;
 use function wp_enqueue_style;
 use function wp_localize_script;
 
+use Sentinel\Admin\SettingsPage;
+
 /**
  * Class StatusDashboard
  *
@@ -34,10 +36,11 @@ class StatusDashboard
     private const AJAX_ACTION = 'sentinel_refresh_status';
 
     /**
-     * Plugin keys (matching the keys of PLUGINS) whose functionality
-     * depends on Unity having booted. When UNITY_KILL is engaged, Unity
-     * short-circuits before firing the `unity/loaded` action, so these
-     * plugins cannot function — regardless of their own active state.
+     * Plugin keys (resolved against whatever plugins are being monitored)
+     * whose functionality depends on Unity having booted. When UNITY_KILL
+     * is engaged, Unity short-circuits before firing the `unity/loaded`
+     * action, so these plugins cannot function — regardless of their own
+     * active state.
      *
      * Concordance is intentionally not in this list: it does not depend
      * on Unity.
@@ -50,45 +53,6 @@ class StatusDashboard
         'amber',
         'integrity',
         'reconcile',
-    ];
-
-    /**
-     * Plugin registry - each entry defines a monitored plugin.
-     *
-     * The 'file' path is relative to WP_PLUGIN_DIR and must match
-     * the value WordPress stores in the active_plugins option.
-     *
-     * @var array<string, array{file: string, label: string}>
-     */
-    private const PLUGINS = [
-        'unity' => [
-            'file'  => 'unity/unity.php',
-            'label' => 'Unity',
-        ],
-        'tsml-for-unity' => [
-            'file'  => 'tsml-for-unity/tsml-for-unity.php',
-            'label' => 'TSML for Unity',
-        ],
-        'scrutiny' => [
-            'file'  => 'scrutiny/scrutiny.php',
-            'label' => 'Scrutiny',
-        ],
-        'amber' => [
-            'file'  => 'amber/amber.php',
-            'label' => 'Amber',
-        ],
-        'integrity' => [
-            'file'  => 'integrity/integrity.php',
-            'label' => 'Integrity',
-        ],
-        'reconcile' => [
-            'file'  => 'reconcile/reconcile.php',
-            'label' => 'Reconcile',
-        ],
-        'concordance' => [
-            'file'  => 'concordance/concordance.php',
-            'label' => 'Concordance',
-        ],
     ];
 
     /**
@@ -184,9 +148,35 @@ class StatusDashboard
      */
     public static function render(): void
     {
+        $mandatoryDefs = SettingsPage::getMandatoryPlugins();
+        $optionalDefs  = SettingsPage::getOptionalPlugins();
+
+        // Track which keys are mandatory vs optional so the stability
+        // indicator and help text only consider mandatory entries.
+        $mandatoryKeys = [];
+        $optionalKeys  = [];
+
         $plugins = [];
-        foreach (self::PLUGINS as $key => $definition) {
-            $plugins[$key] = self::getPluginStatus($definition);
+
+        // Mandatory plugins are always shown, regardless of install state.
+        foreach ($mandatoryDefs as $key => $definition) {
+            $plugins[$key]   = self::getPluginStatus($definition);
+            $mandatoryKeys[] = $key;
+        }
+
+        // Optional plugins only appear in the table when actually installed.
+        // A key already claimed by the mandatory list is ignored here so we
+        // don't double-count it.
+        foreach ($optionalDefs as $key => $definition) {
+            if (isset($plugins[$key])) {
+                continue;
+            }
+            $status = self::getPluginStatus($definition);
+            if (!$status['installed']) {
+                continue;
+            }
+            $plugins[$key]  = $status;
+            $optionalKeys[] = $key;
         }
 
         // Unity's UNITY_KILL kill switch short-circuits its boot, so even
@@ -198,8 +188,9 @@ class StatusDashboard
         }
 
         // When the kill switch is engaged, mark every Unity-dependent plugin
-        // as unavailable so the row reflects what's actually happening on
-        // the site rather than WordPress's view of the active_plugins list.
+        // we're actually monitoring as unavailable so the row reflects what's
+        // actually happening on the site rather than WordPress's view of the
+        // active_plugins list.
         if ($unityKilled) {
             foreach (self::UNITY_DEPENDENTS as $dependentKey) {
                 if (isset($plugins[$dependentKey]) && $plugins[$dependentKey]['installed']) {
@@ -208,13 +199,16 @@ class StatusDashboard
             }
         }
 
-        // Overall health:
-        //   error   – Unity kill switch is set, or any plugin is not installed
-        //   warn    – all installed but some inactive
-        //   healthy – every plugin installed and active
+        // Overall health is determined ONLY by mandatory plugins.
+        // Optional plugins never affect the stability indicator.
+        //   error   – Unity kill switch is set (and Unity is mandatory),
+        //             or any mandatory plugin is not installed
+        //   warn    – all mandatory plugins installed but some inactive
+        //   healthy – every mandatory plugin installed and active
         $anyMissing  = false;
         $anyInactive = false;
-        foreach ($plugins as $info) {
+        foreach ($mandatoryKeys as $key) {
+            $info = $plugins[$key];
             if (!$info['installed']) {
                 $anyMissing = true;
             } elseif (!$info['active']) {
@@ -222,7 +216,9 @@ class StatusDashboard
             }
         }
 
-        if (!empty($plugins['unity']['killSwitch'])) {
+        $unityMandatory = in_array('unity', $mandatoryKeys, true);
+
+        if ($unityMandatory && !empty($plugins['unity']['killSwitch'])) {
             // Take precedence: with Unity dormant, dependent plugins won't
             // function regardless of their own active/inactive state.
             $overallHealth = 'error';
@@ -312,14 +308,19 @@ class StatusDashboard
             // shouldn't also appear in the "X is installed but not active"
             // help block — that advice (activate from the Plugins page)
             // doesn't apply while Unity is dead.
+            //
+            // The help blocks only consider MANDATORY plugins: optional ones
+            // are user-acknowledged "nice to have" entries and shouldn't
+            // prompt the admin to act.
+            $mandatoryPlugins = array_intersect_key($plugins, array_flip($mandatoryKeys));
             $inactive = array_filter(
-                $plugins,
+                $mandatoryPlugins,
                 fn($p) => $p['installed'] && !$p['active'] && empty($p['unavailable'])
             );
-            $missing  = array_filter($plugins, fn($p) => !$p['installed']);
+            $missing  = array_filter($mandatoryPlugins, fn($p) => !$p['installed']);
             ?>
 
-            <?php if (!empty($plugins['unity']['killSwitch'])): ?>
+            <?php if ($unityMandatory && !empty($plugins['unity']['killSwitch'])): ?>
                 <p class="sentinel-help sentinel-help--alert">
                     <strong><?php esc_html_e('Unity is disabled.', 'sentinel'); ?></strong>
                     <?php
