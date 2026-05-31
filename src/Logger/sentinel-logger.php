@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Sentinel Shared Logger
  * Description: PSR-3 cross-plugin logging framework. Deployed automatically by Sentinel.
- * Version: 2.3.6
+ * Version: 2.3.8
  * Author: The Bleeding Deacons
  * License: MIT
  *

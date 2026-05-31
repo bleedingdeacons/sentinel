@@ -256,21 +256,15 @@ class StatusDashboard
                 <thead>
                     <tr>
                         <th><?php esc_html_e('Plugin', 'sentinel'); ?></th>
-                        <th><?php esc_html_e('Version', 'sentinel'); ?></th>
                         <th><?php esc_html_e('Status', 'sentinel'); ?></th>
+                        <th><?php esc_html_e('Version', 'sentinel'); ?></th>
+                        <th><?php esc_html_e('Build Date', 'sentinel'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($plugins as $info): ?>
                         <tr>
                             <td class="sentinel-plugin-name"><?php echo esc_html($info['label']); ?></td>
-                            <td>
-                                <?php if ($info['version']): ?>
-                                    <code><?php echo esc_html($info['version']); ?></code>
-                                <?php else: ?>
-                                    <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
-                                <?php endif; ?>
-                            </td>
                             <td>
                                 <?php if (!empty($info['killSwitch'])): ?>
                                     <span class="sentinel-badge sentinel-badge--killed" title="<?php echo esc_attr__('UNITY_KILL is defined as true in wp-config.php', 'sentinel'); ?>">
@@ -292,6 +286,20 @@ class StatusDashboard
                                     <span class="sentinel-badge sentinel-badge--missing">
                                         <?php esc_html_e('Not Installed', 'sentinel'); ?>
                                     </span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($info['version']): ?>
+                                    <code><?php echo esc_html($info['version']); ?></code>
+                                <?php else: ?>
+                                    <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($info['buildDate']): ?>
+                                    <span class="sentinel-build-date"><?php echo esc_html($info['buildDate']); ?></span>
+                                <?php else: ?>
+                                    <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -379,7 +387,7 @@ class StatusDashboard
      *   - `unavailable` — true for Unity-dependent plugins when UNITY_KILL is engaged
      *
      * @param array{file: string, label: string} $definition
-     * @return array{installed: bool, active: bool, version: string, label: string}
+     * @return array{installed: bool, active: bool, version: string, buildDate: string, label: string}
      */
     private static function getPluginStatus(array $definition): array
     {
@@ -398,11 +406,57 @@ class StatusDashboard
             $version = $data['Version'] ?? '';
         }
 
+        // Determine a "build date" for the plugin. Each monitored plugin is
+        // expected to declare a "Build date:" line in the header block of its
+        // readme.txt; we parse it from there. This works whether the plugin
+        // is active or not, mirroring how the version is read above.
+        $buildDate = '';
+        if ($installed) {
+            $buildDate = self::readBuildDateFromReadme(dirname($fullPath));
+        }
+
         return [
             'installed' => $installed,
             'active'    => $active,
             'version'   => $version,
+            'buildDate' => $buildDate,
             'label'     => $definition['label'],
         ];
+    }
+
+    /**
+     * Read the "Build date" value from a plugin's readme.txt header.
+     *
+     * Looks for a line such as "Build date: 2026-05-31" within the header
+     * block of the plugin's readme. Only the start of the file is read,
+     * since the value lives in the header alongside Stable tag, etc.
+     *
+     * Returns an empty string when no readme is present or no build date
+     * line is found, in which case the widget shows "N/A".
+     *
+     * @param string $pluginDir Absolute path to the plugin's directory.
+     * @return string
+     */
+    private static function readBuildDateFromReadme(string $pluginDir): string
+    {
+        foreach (['readme.txt', 'README.txt'] as $name) {
+            $readme = $pluginDir . '/' . $name;
+            if (!is_readable($readme)) {
+                continue;
+            }
+
+            // The build date lives in the header block at the top of the
+            // file; read only the first chunk to avoid loading large readmes.
+            $contents = file_get_contents($readme, false, null, 0, 8192);
+            if ($contents === false) {
+                continue;
+            }
+
+            if (preg_match('/^[ \t]*Build date[ \t]*:[ \t]*(.+?)[ \t]*$/mi', $contents, $matches)) {
+                return trim($matches[1]);
+            }
+        }
+
+        return '';
     }
 }

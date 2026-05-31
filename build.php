@@ -251,6 +251,9 @@ class PluginBuilder
         // Sync sentinel-logger.php version with plugin version
         $this->syncLoggerVersion();
 
+        // Stamp the build date into the main plugin header
+        $this->syncBuildDate();
+
         // Create ZIP archive
         $this->createZip($archiveName, $excludes);
 
@@ -508,6 +511,64 @@ class PluginBuilder
             $this->log("Updated sentinel-logger.php Version to {$this->version}");
         } else {
             $this->log("No Version header found in sentinel-logger.php — skipping version sync");
+        }
+    }
+
+    /**
+     * Update (or insert) the Build date header in the main plugin file.
+     *
+     * Writes the current date in Y/m/d format (e.g. 2026/01/12). If a
+     * "Build date:" header already exists it is updated; otherwise a new
+     * line is inserted immediately after the "Version:" header.
+     */
+    private function syncBuildDate(): void
+    {
+        $mainFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'sentinel.php';
+        if (!file_exists($mainFile)) {
+            $this->log("No sentinel.php found — skipping build date sync");
+            return;
+        }
+
+        $content = file_get_contents($mainFile);
+        if ($content === false) {
+            $this->error("Failed to read sentinel.php");
+            return;
+        }
+
+        $buildDate = date('Y/m/d');
+
+        // First, try to update an existing "Build date:" header line.
+        $updated = preg_replace(
+            '/^(\s*\*\s*Build date:\s*).+$/mi',
+            '${1}' . $buildDate,
+            $content,
+            1,
+            $count
+        );
+
+        if ($count > 0 && $updated !== null) {
+            file_put_contents($mainFile, $updated);
+            $this->log("Updated sentinel.php Build date to {$buildDate}");
+            return;
+        }
+
+        // No existing line — insert one right after the "Version:" header,
+        // preserving the surrounding docblock indentation/alignment.
+        $updated = preg_replace_callback(
+            '/^([ \t]*)\*([ \t]*)Version:[ \t]*.+$/mi',
+            static function (array $m) use ($buildDate): string {
+                return $m[0] . "\n" . $m[1] . '*' . $m[2] . 'Build date: ' . $buildDate;
+            },
+            $content,
+            1,
+            $count
+        );
+
+        if ($count > 0 && $updated !== null) {
+            file_put_contents($mainFile, $updated);
+            $this->log("Inserted Build date {$buildDate} into sentinel.php");
+        } else {
+            $this->log("No Version header found in sentinel.php — skipping build date sync");
         }
     }
 
