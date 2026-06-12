@@ -75,9 +75,18 @@ concordance/concordance.php|Concordance
 TXT;
 
     /**
-     * Default optional plugin list (empty by default).
+     * Default optional plugin list. These Unity-dependent plugins are not
+     * present on every site, so they are optional (shown only when installed
+     * and never affecting the overall stability indicator) — but when present
+     * they are flagged "Unavailable" alongside the other dependents whenever
+     * Unity is disabled.
      */
-    private const DEFAULT_OPTIONAL_PLUGINS = '';
+    private const DEFAULT_OPTIONAL_PLUGINS = <<<TXT
+reach/reach.php|Reach
+stalwart/stalwart.php|Stalwart
+steward/steward.php|Steward
+trusted/trusted.php|Trusted
+TXT;
 
     /**
      * Nonce action for saving logger configuration.
