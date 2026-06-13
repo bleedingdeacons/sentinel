@@ -209,7 +209,7 @@ class UnityControlPage
                 add_settings_error(
                     'sentinel_unity_control',
                     'kill_switch_removed',
-                    __('Unity has been re-enabled. The change takes effect on the next page load.', 'sentinel'),
+                    __('Unity has been re-enabled, and is loading now.', 'sentinel'),
                     'updated'
                 );
             } else {
