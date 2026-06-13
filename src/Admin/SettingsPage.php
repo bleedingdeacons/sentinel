@@ -86,6 +86,7 @@ reach/reach.php|Reach
 stalwart/stalwart.php|Stalwart
 steward/steward.php|Steward
 trusted/trusted.php|Trusted
+trumpet/trumpet.php|Trumpet
 TXT;
 
     /**

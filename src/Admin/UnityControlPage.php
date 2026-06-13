@@ -99,6 +99,7 @@ class UnityControlPage
         'Stalwart',
         'Steward',
         'Trusted',
+        'Trumpet',
     ];
 
     /** @var string The hook suffix returned by add_submenu_page(). */
@@ -188,7 +189,7 @@ class UnityControlPage
                 add_settings_error(
                     'sentinel_unity_control',
                     'kill_switch_enabled',
-                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Stalwart, Steward, Trusted) will stand down.', 'sentinel'),
+                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Stalwart, Steward, Trusted, Trumpet) will stand down.', 'sentinel'),
                     'updated'
                 );
             } else {
