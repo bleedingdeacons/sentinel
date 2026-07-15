@@ -3,7 +3,7 @@ Contributors: thebleedingdeacons
 Tags: dashboard, monitoring, status, integrity, api
 Requires at least: 6.0
 Tested up to: 6.9
-Stable tag: 2.4.4
+Stable tag: 2.4.6
 Build date: 2026-05-31
 Requires PHP: 8.1
 License: GPL-2.0-or-later
