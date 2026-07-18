@@ -102,7 +102,13 @@ class PluginBuilder
             'vendor/*/tests',
             'vendor/*/Test',
             'vendor/*/Tests',
-            'vendor/bin',
+            'vendor/bin',
+
+            // Dev artefacts that must never ship
+            '.phpunit.result.cache',
+            '.phpunit.cache',
+            'phpstan-baseline.neon',
+            '.claude',
     ];
 
     // Files and directories to exclude in dev builds
