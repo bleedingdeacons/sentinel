@@ -469,10 +469,11 @@ TXT;
     /**
      * Get the current logging configuration for display.
      *
-     * The options and example keys are optional: the template renders them
-     * when an entry carries them, and no entry does today.
+     * Every entry carries an example wp-config.php line. Only entries with a
+     * fixed set of accepted values carry options, so that key is optional —
+     * the template renders the hint when it is present.
      *
-     * @return array<string, array{value: mixed, source: string, description: string, options?: string, example?: string}>
+     * @return array<string, array{value: mixed, source: string, description: string, example: string, options?: string}>
      */
     private static function getLoggingConfig(): array
     {
