@@ -1,0 +1,43 @@
+# Committed PHPStan config.
+#
+# phpstan.neon (no .dist) is gitignored and, if present, overrides this file
+# entirely — keep personal tweaks there. This .dist is what CI uses: before it
+# existed there was no committed config at all, so the step failed with "At
+# least one path must be specified to analyse" on every run, silently, because
+# it was advisory.
+
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    paths:
+        - src
+    excludePaths:
+        - tests
+        # The mu-plugin is a standalone procedural file with global classes
+        # (Sentinel_Logger, Sentinel_Log_Channel, etc.) that are not autoloaded
+        # via PSR-4. It is analysed separately if needed.
+        - src/Logger/sentinel-logger.php
+    scanFiles:
+        # Not analysed (see excludePaths) but scanned for symbols, so
+        # Sentinel_Logger and Sentinel_Log_Channel resolve in type positions
+        # rather than being ignored by pattern — the old ignores did not match
+        # every phrasing PHPStan uses for an unknown class.
+        - src/Logger/sentinel-logger.php
+        # Defines SENTINEL_VERSION, SENTINEL_PLUGIN_URL and friends. Outside
+        # paths (src only), so it has to be scanned explicitly.
+        - sentinel.php
+    # An ignoreErrors pattern that stops matching is reported as an error by
+    # default, so a stale pattern would fail the gate. Matches amber.
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        - '#Function get_plugin_data not found#'
+        - '#Function dbDelta not found#'
+        # Defined in sentinel.php, but from runtime calls (plugin_dir_path(),
+        # plugin_dir_url()) rather than literals, so scanning the file is not
+        # enough for PHPStan to fold them into known constants. Named one by
+        # one rather than by wildcard, so a typo'd constant is still reported.
+        - '#Constant SENTINEL_PLUGIN_DIR not found#'
+        - '#Constant SENTINEL_PLUGIN_URL not found#'
+        - '#Constant SENTINEL_VERSION not found#'
