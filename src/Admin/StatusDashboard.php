@@ -136,7 +136,6 @@ class StatusDashboard
 
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Unauthorized', 403);
-            return;
         }
 
         ob_start();
@@ -409,7 +408,7 @@ class StatusDashboard
         // Read version from the file header - works whether active or not
         if ($installed && function_exists('get_plugin_data')) {
             $data    = get_plugin_data($fullPath, false, false);
-            $version = $data['Version'] ?? '';
+            $version = $data['Version'];
         }
 
         // Determine a "build date" for the plugin. Each monitored plugin is

@@ -73,12 +73,20 @@ jobs:
         # The build is what /bump ships, so a broken build must fail the PR.
         run: composer build:production
 
+      - name: PHPStan
+        # A gate, promoted from advisory now the repo is green. It ran advisory
+        # for a long time, which hid that this plugin's own logger classes and
+        # constants were unresolvable.
+        run: composer phpstan
+
+      - name: PHPUnit
+        # A gate. There was no test step here at all, which is why nobody
+        # noticed the dev dependencies had never been installed and the suite
+        # had never run.
+        run: composer test
+
       # --- Advisory --------------------------------------------------------
       # Reported but not yet enforced. Promote to a gate once a repo is green.
-
-      - name: PHPStan (advisory)
-        run: composer phpstan
-        continue-on-error: true
 
       - name: composer.lock up to date (advisory)
         run: composer validate

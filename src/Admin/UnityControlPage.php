@@ -103,7 +103,6 @@ class UnityControlPage
     ];
 
     /** @var string The hook suffix returned by add_submenu_page(). */
-    private static string $hookSuffix = '';
 
     /**
      * Set to true after a successful enable/disable in handleSave(), so
@@ -121,7 +120,7 @@ class UnityControlPage
 
     public static function registerPage(): void
     {
-        self::$hookSuffix = (string) add_submenu_page(
+        add_submenu_page(
             Plugin::MENU_SLUG,
             self::PAGE_TITLE,
             self::MENU_TITLE,

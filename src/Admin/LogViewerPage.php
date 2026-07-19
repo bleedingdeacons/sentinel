@@ -146,7 +146,6 @@ class LogViewerPage
 
         if (!current_user_can(self::CAPABILITY)) {
             wp_send_json_error('Unauthorized', 403);
-            return;
         }
 
         // Flush any buffered entries so the view reflects the latest data.
