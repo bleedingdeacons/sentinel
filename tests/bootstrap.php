@@ -45,3 +45,89 @@ if (!defined('WPMU_PLUGIN_DIR')) {
 if (!defined('SENTINEL_CAPTURE_ERRORS')) {
     define('SENTINEL_CAPTURE_ERRORS', false);
 }
+
+/**
+ * Minimal $wpdb stand-in.
+ *
+ * Deliberately a plain class rather than a Mockery double: the logger
+ * registers handleShutdown() as a shutdown function, which flushes whatever
+ * is left in the buffer *after* PHPUnit has finished and Mockery has closed.
+ * A mock would be dead by then and take the process down with it; this
+ * survives, swallows the write, and lets the run exit cleanly.
+ */
+if (!class_exists('Sentinel_Test_Wpdb')) {
+    class Sentinel_Test_Wpdb
+    {
+        public string $prefix = 'wp_';
+        public string $last_error = '';
+
+        /** @var array<int, string> Every statement passed to query(). */
+        public array $queries = [];
+
+        public function prepare(string $query, mixed ...$args): string
+        {
+            // Good enough for assertions about shape: substitute positionally
+            // without the escaping WordPress would apply.
+            foreach ($args as $arg) {
+                $query = preg_replace('/%[sdf]/', (string) $arg, $query, 1) ?? $query;
+            }
+
+            return $query;
+        }
+
+        public function query(string $query): int
+        {
+            $this->queries[] = $query;
+
+            return 1;
+        }
+
+        public function get_var(string $query): string
+        {
+            $this->queries[] = $query;
+
+            return '0';
+        }
+
+        /** @return array<int, mixed> */
+        public function get_results(string $query): array
+        {
+            $this->queries[] = $query;
+
+            return [];
+        }
+
+        /** @var array<int, array{0: string, 1: array<string, mixed>}> Rows passed to insert(). */
+        public array $inserts = [];
+
+        /**
+         * @param array<string, mixed> $data
+         */
+        public function insert(string $table, array $data): int
+        {
+            $this->inserts[] = [$table, $data];
+
+            return 1;
+        }
+
+        public function get_charset_collate(): string
+        {
+            return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+        }
+    }
+}
+
+global $wpdb;
+$wpdb = new Sentinel_Test_Wpdb();
+
+/**
+ * esc_sql() as a real function rather than a WP_Mock stub, for the same
+ * reason as $wpdb above: flush() calls it, and the shutdown flush happens
+ * after WP_Mock has torn its stubs down.
+ */
+if (!function_exists('esc_sql')) {
+    function esc_sql(string $data): string
+    {
+        return addslashes($data);
+    }
+}
