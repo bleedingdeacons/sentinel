@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\TestCase;
+use Sentinel\Tests\TestCase;
 use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
 /**
  * Tests for Sentinel_Logger internal logic.
@@ -17,16 +16,9 @@ use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
  */
 class SentinelLoggerTest extends TestCase
 {
-    use MockeryPHPUnitIntegration;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (!class_exists('Sentinel_Logger', false)) {
-            require_once SENTINEL_PLUGIN_DIR . 'src/Logger/sentinel-logger.php';
-        }
-    }
+    // MockeryPHPUnitIntegration is applied by Sentinel\Tests\TestCase.
+    // Using it here as well makes assertPostConditions() recurse into
+    // itself until the process runs out of memory.
 
     /**
      * Call a private method on Sentinel_Logger via reflection.

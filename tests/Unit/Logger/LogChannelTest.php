@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\TestCase;
+use Sentinel\Tests\TestCase;
 
 /**
  * Tests for Sentinel_Log_Channel.
@@ -14,15 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 class LogChannelTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (!class_exists('Sentinel_Log_Channel', false)) {
-            require_once SENTINEL_PLUGIN_DIR . 'src/Logger/sentinel-logger.php';
-        }
-    }
-
     /** @test */
     public function getChannel_returns_the_channel_name(): void
     {
