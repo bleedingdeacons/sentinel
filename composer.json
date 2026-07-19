@@ -34,7 +34,8 @@
         "build:production": "php build.php build:production",
         "build:dev": "php build.php build:dev",
         "build:clean": "php build.php clean",
-        "phpstan": "phpstan analyse"
+        "phpstan": "phpstan analyse",
+        "test": "phpunit"
     },
     "config": {
         "optimize-autoloader": true,

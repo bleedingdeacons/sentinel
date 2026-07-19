@@ -469,7 +469,10 @@ TXT;
     /**
      * Get the current logging configuration for display.
      *
-     * @return array<string, array{value: mixed, source: string, description: string}>
+     * The options and example keys are optional: the template renders them
+     * when an entry carries them, and no entry does today.
+     *
+     * @return array<string, array{value: mixed, source: string, description: string, options?: string, example?: string}>
      */
     private static function getLoggingConfig(): array
     {
