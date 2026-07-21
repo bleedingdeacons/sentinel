@@ -26,7 +26,9 @@ jobs:
           # zip: build.php assembles the release archive with ZipArchive.
           extensions: mbstring, intl, json, zip
           tools: composer:v2
-          coverage: none
+          # pcov drives PHPUnit's line coverage for the Coveralls upload
+          # below. Much faster than xdebug for coverage-only runs.
+          coverage: pcov
 
       - name: Get Composer cache directory
         id: composer-cache
@@ -83,10 +85,20 @@ jobs:
         # A gate. There was no test step here at all, which is why nobody
         # noticed the dev dependencies had never been installed and the suite
         # had never run.
-        run: composer test
+        run: composer test -- --coverage-clover build/logs/clover.xml
 
       # --- Advisory --------------------------------------------------------
       # Reported but not yet enforced. Promote to a gate once a repo is green.
+
+      - name: Upload coverage to Coveralls (advisory)
+        # Reports a coverage number; does not gate the build. The Clover report
+        # is produced by the PHPUnit step above.
+        uses: coverallsapp/github-action@v2
+        continue-on-error: true
+        with:
+          file: build/logs/clover.xml
+          format: clover
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: composer.lock up to date (advisory)
         run: composer validate
