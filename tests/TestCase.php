@@ -26,12 +26,26 @@ abstract class TestCase extends PHPUnitTestCase
     use MockeryPHPUnitIntegration;
 
     /**
+     * Option values seen by the stubbed get_option().
+     *
+     * WP_Mock resolves the first matching expectation, so the catch-all
+     * get_option registered below would shadow any narrower stub a test
+     * added afterwards. Routing every read through this array instead lets
+     * a test set an option with setOption() and have it honoured, while
+     * anything unset still falls back to the caller's default.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $optionStore = [];
+
+    /**
      * Set up test environment
      */
     protected function setUp(): void
     {
         parent::setUp();
         WP_Mock::setUp();
+        $this->optionStore = [];
 
         // The logger lives in a mu-plugin-style file rather than the PSR-4
         // tree, so it is required rather than autoloaded. Loading it here (not
@@ -57,6 +71,14 @@ abstract class TestCase extends PHPUnitTestCase
     }
 
     /**
+     * Seed an option value for the stubbed get_option().
+     */
+    protected function setOption(string $name, mixed $value): void
+    {
+        $this->optionStore[$name] = $value;
+    }
+
+    /**
      * Stub the WordPress calls made while constructing Sentinel_Logger.
      */
     private function stubLoggerBootstrap(): void
@@ -72,11 +94,20 @@ abstract class TestCase extends PHPUnitTestCase
             ->with('sentinel_logger_db_version', '')
             ->andReturn(\Sentinel_Logger::DB_VERSION);
 
-        // Any other option read falls back to its default.
+        // Any other option read falls back to its default, unless a test has
+        // seeded a value via setOption().
         WP_Mock::userFunction('get_option')
-            ->andReturnUsing(static fn (string $name, mixed $default = false): mixed => $default);
+            ->andReturnUsing(function (string $name, mixed $default = false): mixed {
+                return array_key_exists($name, $this->optionStore) ? $this->optionStore[$name] : $default;
+            });
 
-        WP_Mock::userFunction('update_option')->andReturn(true);
+        // Writes land in the same store so a test can assert what was saved.
+        WP_Mock::userFunction('update_option')
+            ->andReturnUsing(function (string $name, mixed $value = null): bool {
+                $this->optionStore[$name] = $value;
+
+                return true;
+            });
 
         // Channel names are keys; sanitize_key's real behaviour is what the
         // channel-naming assertions are checking, so mirror it rather than
