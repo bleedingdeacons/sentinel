@@ -249,6 +249,8 @@ TXT;
 
     /**
      * Sanitize the plugin-list textarea: trim each line, strip blanks and comments.
+     *
+     * @param mixed $value Raw option value; anything non-string yields ''.
      */
     public static function sanitizePluginList($value): string
     {
