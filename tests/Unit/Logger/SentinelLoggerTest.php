@@ -26,7 +26,6 @@ class SentinelLoggerTest extends TestCase
     private function callPrivate(string $method, array $args): mixed
     {
         $ref = new \ReflectionMethod(\Sentinel_Logger::class, $method);
-        $ref->setAccessible(true);
 
         return $ref->invoke(\Sentinel_Logger::instance(), ...$args);
     }

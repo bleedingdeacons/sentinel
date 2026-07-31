@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use BleedingDeacons\WpMocks\WpState;
 use ReflectionMethod;
 use ReflectionProperty;
 use Sentinel\Tests\TestCase;
-use WP_Mock;
 
 /**
  * Exercises the Sentinel_Logger engine — buffered dispatch/flush, table
@@ -23,8 +23,8 @@ class SentinelLoggerEngineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        WP_Mock::userFunction('do_action')->andReturn(null);
-        WP_Mock::userFunction('delete_option')->andReturn(true);
+        // do_action() is Brain Monkey's, and delete_option() is a real stub
+        // over WpState — neither needs standing in for here any more.
         $this->setBuffer([]);
         $GLOBALS['wpdb']->queries = [];
     }
@@ -33,21 +33,18 @@ class SentinelLoggerEngineTest extends TestCase
     private function setBuffer(array $rows): void
     {
         $p = new ReflectionProperty(\Sentinel_Logger::class, 'buffer');
-        $p->setAccessible(true);
         $p->setValue(\Sentinel_Logger::instance(), $rows);
     }
 
     private function setPrivate(string $name, mixed $value): void
     {
         $p = new ReflectionProperty(\Sentinel_Logger::class, $name);
-        $p->setAccessible(true);
         $p->setValue(\Sentinel_Logger::instance(), $value);
     }
 
     private function callPrivate(string $method, array $args = []): mixed
     {
         $m = new ReflectionMethod(\Sentinel_Logger::class, $method);
-        $m->setAccessible(true);
         return $m->invoke(\Sentinel_Logger::instance(), ...$args);
     }
 
@@ -134,8 +131,20 @@ class SentinelLoggerEngineTest extends TestCase
 
     public function testGetRequestTypeDefaultsToFront(): void
     {
-        // No CLI/CRON/AJAX/REST/admin markers in a plain unit run.
+        // No CLI/CRON/AJAX/REST markers, and not an admin request either.
+        // wp-mocks' is_admin() defaults to true, so say so explicitly rather
+        // than relying on the function being undefined, which is what used to
+        // send this down the FRONT branch.
+        WpState::$isAdmin = false;
+
         $this->assertSame('FRONT', $this->callPrivate('getRequestType'));
+    }
+
+    public function testGetRequestTypeReportsAdminRequests(): void
+    {
+        WpState::$isAdmin = true;
+
+        $this->assertSame('ADMIN', $this->callPrivate('getRequestType'));
     }
 
     public function testHandleShutdownFlushesWithoutError(): void
@@ -143,5 +152,21 @@ class SentinelLoggerEngineTest extends TestCase
         $this->setBuffer([]);
         $this->callPrivate('handleShutdown');
         $this->assertTrue(true);
+    }
+
+    public function testHandleShutdownIgnoresANonFatalLastError(): void
+    {
+        // handleShutdown() only records the error PHP died on, so a warning
+        // left lying around must not be written as a fatal. Which of the two
+        // guard branches this lands on used to depend on whatever incidental
+        // error the rest of the run had triggered; seeding one makes it
+        // deterministic.
+        $this->setBuffer([]);
+        @trigger_error('a warning, not a fatal', E_USER_WARNING);
+        $before = count($GLOBALS['wpdb']->inserts);
+
+        $this->callPrivate('handleShutdown');
+
+        $this->assertCount($before, $GLOBALS['wpdb']->inserts, 'No fatal row was written.');
     }
 }

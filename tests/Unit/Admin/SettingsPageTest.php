@@ -6,7 +6,7 @@ namespace Sentinel\Tests\Unit\Admin;
 
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Tests\AdminTestCase;
-use Sentinel\Tests\WpDieException;
+use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 
 /**
  * Tests for the Sentinel settings page.
@@ -43,7 +43,7 @@ final class SettingsPageTest extends AdminTestCase
         SettingsPage::registerPage();
 
         SettingsPage::enqueueAssets('some-other-page');
-        SettingsPage::enqueueAssets('sentinel_page_stub');
+        SettingsPage::enqueueAssets($this->submenuHook('sentinel-settings'));
 
         $this->assertTrue(true, 'enqueue guarded by hook suffix');
     }

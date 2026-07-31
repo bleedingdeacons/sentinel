@@ -28,7 +28,6 @@ final class UnityControlPageFailureTest extends AdminTestCase
     {
         parent::setUp();
         $prop = new ReflectionProperty(UnityControlPage::class, 'justChanged');
-        $prop->setAccessible(true);
         $prop->setValue(null, false);
         $_POST = [];
     }

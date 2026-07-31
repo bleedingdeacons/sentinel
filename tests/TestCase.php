@@ -4,52 +4,36 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests;
 
-use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use PHPUnit\Framework\TestCase as PHPUnitTestCase;
-use WP_Mock;
+use BleedingDeacons\WpMocks\TestCase as WpMocksTestCase;
+use BleedingDeacons\WpMocks\WpState;
 
 /**
- * Base TestCase for Sentinel plugin tests
+ * Base TestCase for Sentinel plugin tests.
  *
- * Provides setup and teardown for WP_Mock and Mockery integration, matching
- * Unity, tsml-for-unity and Integrity: PHPUnit's TestCase with WP_Mock driven
- * by hand, rather than extending WP_Mock\Tools\TestCase.
+ * Brain Monkey's lifecycle, Mockery integration and the WordPress stubs all
+ * come from bleedingdeacons/wp-mocks, shared across the plugin suite.
+ *
+ * The $optionStore this class used to carry is gone: wp-mocks' get_option() and
+ * update_option() are real functions over WpState::$options, which is the same
+ * idea generalised. Anything that used setOption() still works — it now seeds
+ * that store instead.
  *
  * Sentinel_Logger is a singleton whose constructor reads configuration and
  * ensures its table exists, so merely calling instance() reaches into
- * WordPress. The stubs below cover that path; without them every test that
- * touches the logger dies on an undefined function before asserting anything.
+ * WordPress. The setUp below covers that path.
  */
-abstract class TestCase extends PHPUnitTestCase
+abstract class TestCase extends WpMocksTestCase
 {
-    use MockeryPHPUnitIntegration;
-
-    /**
-     * Option values seen by the stubbed get_option().
-     *
-     * WP_Mock resolves the first matching expectation, so the catch-all
-     * get_option registered below would shadow any narrower stub a test
-     * added afterwards. Routing every read through this array instead lets
-     * a test set an option with setOption() and have it honoured, while
-     * anything unset still falls back to the caller's default.
-     *
-     * @var array<string, mixed>
-     */
-    protected array $optionStore = [];
-
     /**
      * Set up test environment
      */
     protected function setUp(): void
     {
         parent::setUp();
-        WP_Mock::setUp();
-        $this->optionStore = [];
 
         // The logger lives in a mu-plugin-style file rather than the PSR-4
         // tree, so it is required rather than autoloaded. Loading it here (not
-        // just in the test that needs it) lets the stubs below reference its
+        // just in the test that needs it) lets the seeding below reference its
         // constants. Safe because tests/bootstrap.php defines
         // SENTINEL_CAPTURE_ERRORS as false, which suppresses the global
         // handler registration at the foot of the file.
@@ -57,68 +41,26 @@ abstract class TestCase extends PHPUnitTestCase
             require_once SENTINEL_PLUGIN_DIR . 'src/Logger/sentinel-logger.php';
         }
 
-        $this->stubLoggerBootstrap();
+        // maybeCreateTable() short-circuits when the stored schema version
+        // already matches, which keeps dbDelta and $wpdb out of unit tests.
+        WpState::$options['sentinel_logger_db_version'] = \Sentinel_Logger::DB_VERSION;
+
+        // Not stubbed: register_shutdown_function, which the constructor calls
+        // to flush the buffer at end of request. It is an internal PHP function
+        // and neither Patchwork nor Brain Monkey will override those. Harmless
+        // here — the registered flush is a no-op while the buffer is empty, and
+        // these tests never fill it.
+        //
+        // Also not stubbed: apply_filters(). resolveConfig() falls through to a
+        // filter for each setting, and Brain Monkey's apply_filters already
+        // returns the value it was handed, so the documented defaults survive.
     }
 
     /**
-     * Tear down test environment
-     */
-    protected function tearDown(): void
-    {
-        WP_Mock::tearDown();
-        Mockery::close();
-        parent::tearDown();
-    }
-
-    /**
-     * Seed an option value for the stubbed get_option().
+     * Seed an option value read back by get_option().
      */
     protected function setOption(string $name, mixed $value): void
     {
-        $this->optionStore[$name] = $value;
-    }
-
-    /**
-     * Stub the WordPress calls made while constructing Sentinel_Logger.
-     */
-    private function stubLoggerBootstrap(): void
-    {
-        // resolveConfig() falls through to a filter for each setting; return
-        // the supplied default so tests see the documented defaults.
-        WP_Mock::userFunction('apply_filters')
-            ->andReturnUsing(static fn (string $filter, mixed $default = null): mixed => $default);
-
-        // maybeCreateTable() short-circuits when the stored schema version
-        // already matches, which keeps dbDelta and $wpdb out of unit tests.
-        WP_Mock::userFunction('get_option')
-            ->with('sentinel_logger_db_version', '')
-            ->andReturn(\Sentinel_Logger::DB_VERSION);
-
-        // Any other option read falls back to its default, unless a test has
-        // seeded a value via setOption().
-        WP_Mock::userFunction('get_option')
-            ->andReturnUsing(function (string $name, mixed $default = false): mixed {
-                return array_key_exists($name, $this->optionStore) ? $this->optionStore[$name] : $default;
-            });
-
-        // Writes land in the same store so a test can assert what was saved.
-        WP_Mock::userFunction('update_option')
-            ->andReturnUsing(function (string $name, mixed $value = null): bool {
-                $this->optionStore[$name] = $value;
-
-                return true;
-            });
-
-        // Channel names are keys; sanitize_key's real behaviour is what the
-        // channel-naming assertions are checking, so mirror it rather than
-        // passing the value through untouched.
-        WP_Mock::userFunction('sanitize_key')
-            ->andReturnUsing(static fn (string $key): string => preg_replace('/[^a-z0-9_\-]/', '', strtolower($key)) ?? '');
-
-        // Not stubbed: register_shutdown_function, which the constructor calls
-        // to flush the buffer at end of request. It is an internal PHP
-        // function and WP_Mock refuses to override those. Harmless here — the
-        // registered flush is a no-op while the buffer is empty, and these
-        // tests never fill it.
+        WpState::$options[$name] = $value;
     }
 }

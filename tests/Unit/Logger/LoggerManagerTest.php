@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\TestCase;
 use Sentinel\Logger\LoggerManager;
-use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use WP_Mock;
 
 /**
  * Tests for LoggerManager filesystem operations.
@@ -16,17 +13,18 @@ use WP_Mock;
  * Uses a temporary directory for WPMU_PLUGIN_DIR to avoid touching
  * real WordPress installations. The source file path points to the
  * actual bundled sentinel-logger.php.
+ *
+ * Extends the shared wp-mocks TestCase rather than Sentinel's own, which would
+ * load the logger singleton these purely filesystem-shaped assertions have no
+ * use for.
  */
 class LoggerManagerTest extends TestCase
 {
-    use MockeryPHPUnitIntegration;
-
     private string $tempMuDir;
 
     protected function setUp(): void
     {
         parent::setUp();
-        WP_Mock::setUp();
 
         // Create a temp directory to act as mu-plugins
         $this->tempMuDir = sys_get_temp_dir() . '/sentinel-test-mu-' . uniqid();
@@ -50,8 +48,6 @@ class LoggerManagerTest extends TestCase
             rmdir($this->tempMuDir);
         }
 
-        WP_Mock::tearDown();
-        Mockery::close();
         parent::tearDown();
     }
 

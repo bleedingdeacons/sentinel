@@ -38,7 +38,6 @@ final class UnityControlPageExtraTest extends AdminTestCase
     private function resetJustChanged(): void
     {
         $prop = new ReflectionProperty(UnityControlPage::class, 'justChanged');
-        $prop->setAccessible(true);
         $prop->setValue(null, false);
     }
 
