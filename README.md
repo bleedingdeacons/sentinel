@@ -172,7 +172,10 @@ composer install
 | `composer test` | Run the PHPUnit test suite |
 | `composer phpstan` | Run PHPStan static analysis |
 
-The suite uses **PHPUnit** with **WP_Mock** and **Mockery**. Line coverage is
+The suite uses **PHPUnit** with **Mockery** and
+[**bleedingdeacons/wp-mocks**](https://github.com/bleedingdeacons/wp-mocks) —
+the suite's shared WordPress test doubles, a state-backed stub layer over Brain
+Monkey. Line coverage is
 reported to [Coveralls](https://coveralls.io/github/bleedingdeacons/sentinel?branch=main)
 on every CI run — see the coverage badge at the top of this file.
 

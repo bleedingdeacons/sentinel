@@ -6,7 +6,6 @@ namespace Sentinel\Tests\Unit\Logger;
 
 use Sentinel\Logger\LoggerManager;
 use Sentinel\Tests\TestCase;
-use WP_Mock;
 
 /**
  * Tests for LoggerManager's deployment lifecycle.
@@ -24,11 +23,9 @@ final class LoggerManagerDeploymentTest extends TestCase
     {
         parent::setUp();
 
-        WP_Mock::userFunction('wp_mkdir_p')->andReturnUsing(
-            static fn (string $dir): bool => is_dir($dir) || mkdir($dir, 0777, true)
-        );
-        WP_Mock::userFunction('delete_option')->andReturn(true);
-
+        // wp_mkdir_p() and delete_option() are real stubs in wp-mocks — the
+        // first creating the directory for real, which is what these
+        // filesystem-shaped tests want anyway.
         if (!is_dir(WPMU_PLUGIN_DIR)) {
             mkdir(WPMU_PLUGIN_DIR, 0777, true);
         }

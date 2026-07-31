@@ -26,9 +26,8 @@ class LogChannelTest extends TestCase
     /** @test */
     public function channel_name_is_sanitized(): void
     {
-        // sanitize_key is a WP function — in test context it may
-        // or may not be available via WP_Mock. The constructor calls it,
-        // so we test via the static ::channel() factory which handles it.
+        // sanitize_key is a WP function; the constructor calls it, so we test
+        // via the static ::channel() factory which handles it.
         $channel = \Sentinel_Logger::channel('Test_Plugin');
 
         // sanitize_key lowercases and keeps alnum, dashes, underscores

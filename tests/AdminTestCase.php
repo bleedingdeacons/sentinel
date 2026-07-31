@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests;
 
-use WP_Mock;
+use BleedingDeacons\WpMocks\WpState;
+use Brain\Monkey\Functions;
+use Sentinel\Plugin;
 
 /**
  * Base case for the admin-page tests.
  *
  * The admin classes are thin over WordPress: they register menus, read
  * options, and emit large blocks of HTML. Testing them therefore means
- * standing up enough of WordPress that a render call runs end to end, so
- * this class stubs the whole surface they touch in one place rather than
- * repeating it per test.
+ * standing up enough of WordPress that a render call runs end to end.
  *
- * Two deliberate choices:
+ * Most of that surface now comes from bleedingdeacons/wp-mocks, which keeps the
+ * same two deliberate choices this class used to make by hand:
  *
  *   - Escaping and translation helpers pass their input straight through.
  *     The assertions are about what the page says, not about escaping,
@@ -23,14 +24,14 @@ use WP_Mock;
  *   - wp_die() throws {@see WpDieException} rather than returning. It is
  *     a terminating function in production, so a test that reaches it must
  *     stop there; throwing makes the capability guards assertable.
+ *
+ * What is left here is the part the shared package does not carry: the Settings
+ * API no-ops, and the two stubs that have to read a per-test property.
  */
 abstract class AdminTestCase extends TestCase
 {
     /** Files created under ABSPATH by a test, removed on tearDown. */
     private array $createdFiles = [];
-
-    /** What the stubbed current_user_can() returns; see denyCapability(). */
-    protected bool $userCan = true;
 
     /** Plugin files the stubbed is_plugin_active() should report as active. */
     protected array $activePlugins = [];
@@ -44,7 +45,6 @@ abstract class AdminTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->userCan = true;
         $this->activePlugins = [];
         $this->pluginVersion = '1.0.0';
         $this->stubAdminFunctions();
@@ -53,7 +53,7 @@ abstract class AdminTestCase extends TestCase
     /** Make current_user_can() return false, to reach the guard branches. */
     protected function denyCapability(): void
     {
-        $this->userCan = false;
+        WpState::$userCan = false;
     }
 
     /**
@@ -142,6 +142,20 @@ abstract class AdminTestCase extends TestCase
     }
 
     /**
+     * The hook suffix add_submenu_page() hands back for a page under Sentinel.
+     *
+     * enqueueAssets() compares the current screen against the suffix its
+     * registerPage() stored, so a test that wants the assets to load has to
+     * name the real one. wp-mocks builds it the way WordPress does, from the
+     * parent and the page slug — before this migration the stub returned a
+     * fixed string and the tests named that instead.
+     */
+    protected function submenuHook(string $pageSlug): string
+    {
+        return Plugin::MENU_SLUG . '_page_' . $pageSlug;
+    }
+
+    /**
      * Capture everything a callable echoes.
      */
     protected function capture(callable $fn): string
@@ -157,113 +171,35 @@ abstract class AdminTestCase extends TestCase
     }
 
     /**
-     * Stub the WordPress surface the admin pages call.
+     * Stub the part of the WordPress surface wp-mocks does not already cover.
+     *
+     * Everything else — escaping, translation, formatting, menus, nonces, URLs,
+     * capabilities, wp_die() and the wp_send_json_* helpers — comes from the
+     * shared stubs, so it is not repeated here.
+     *
+     * Nothing registers add_action()/add_filter() either: Brain Monkey owns the
+     * hook layer, and stubbing over it would silently break every hook
+     * assertion in the suite.
      */
     private function stubAdminFunctions(): void
     {
-        // ── Escaping and translation ──────────────────────────────────
-        foreach (['esc_attr', 'esc_html', 'esc_textarea', 'esc_url', 'esc_url_raw'] as $fn) {
-            WP_Mock::userFunction($fn)->andReturnUsing(static fn ($v = ''): string => (string) $v);
-        }
-        foreach (['__', 'esc_html__', 'esc_attr__'] as $fn) {
-            WP_Mock::userFunction($fn)->andReturnUsing(static fn (string $text = '', string $d = ''): string => $text);
-        }
-        foreach (['_e', 'esc_html_e', 'esc_attr_e'] as $fn) {
-            WP_Mock::userFunction($fn)->andReturnUsing(static function (string $text = '', string $d = ''): void {
-                echo $text;
-            });
-        }
-
-        // ── Menu / settings registration (side-effect free here) ──────
+        // The Settings API. Registration is a side effect these tests do not
+        // assert on, so it is enough that the calls are harmless.
         foreach ([
-            'add_action', 'add_filter', 'add_settings_error', 'add_settings_field',
-            'add_settings_section', 'register_setting', 'do_settings_sections',
-            'settings_errors', 'settings_fields', 'submit_button', 'wp_nonce_field',
-            'wp_enqueue_script', 'wp_enqueue_style', 'wp_localize_script',
-            'wp_add_dashboard_widget', 'wp_log', 'wp_log_flush', 'wp_safe_redirect',
+            'add_settings_error', 'add_settings_field', 'add_settings_section',
+            'register_setting', 'do_settings_sections', 'settings_errors',
+            'settings_fields', 'submit_button',
         ] as $fn) {
-            WP_Mock::userFunction($fn)->andReturn(null);
+            Functions\when($fn)->justReturn(null);
         }
 
-        // checked()/selected()/disabled() echo the attribute in WordPress;
-        // the exact markup is not what these tests assert, so they stay quiet.
-        foreach (['checked', 'selected', 'disabled'] as $fn) {
-            WP_Mock::userFunction($fn)->andReturn('');
-        }
-
-        // Formatting helpers used inside the rendered tables.
-        WP_Mock::userFunction('number_format_i18n')
-            ->andReturnUsing(static fn ($n = 0, $d = 0): string => number_format((float) $n, (int) $d));
-        WP_Mock::userFunction('size_format')
-            ->andReturnUsing(static fn ($b = 0): string => $b . ' B');
-        WP_Mock::userFunction('human_time_diff')->andReturn('5 mins');
-        WP_Mock::userFunction('absint')->andReturnUsing(static fn ($v = 0): int => abs((int) $v));
-        WP_Mock::userFunction('wp_unslash')->andReturnUsing(static fn ($v = '') => $v);
-        WP_Mock::userFunction('wp_kses_post')->andReturnUsing(static fn ($v = ''): string => (string) $v);
-        WP_Mock::userFunction('esc_js')->andReturnUsing(static fn ($v = ''): string => (string) $v);
-
-        WP_Mock::userFunction('add_menu_page')->andReturn('toplevel_page_sentinel');
-        WP_Mock::userFunction('add_submenu_page')->andReturn('sentinel_page_stub');
-
-        // ── Request / URL helpers ─────────────────────────────────────
-        WP_Mock::userFunction('admin_url')
-            ->andReturnUsing(static fn (string $p = ''): string => 'https://example.test/wp-admin/' . $p);
-        WP_Mock::userFunction('add_query_arg')
-            ->andReturnUsing(static fn (...$a): string => 'https://example.test/wp-admin/?stubbed=1');
-        WP_Mock::userFunction('wp_create_nonce')->andReturn('test-nonce');
-        WP_Mock::userFunction('check_admin_referer')->andReturn(true);
-        WP_Mock::userFunction('wp_json_encode')
-            ->andReturnUsing(static fn ($v): string => (string) json_encode($v));
-
-        // ── Capability + termination ──────────────────────────────────
-        // Routed through a property for the same reason as get_option: the
-        // first matching WP_Mock expectation wins, so a per-test override
-        // registered later would never be consulted. Call denyCapability()
-        // to exercise the guard branches.
-        WP_Mock::userFunction('current_user_can')
-            ->andReturnUsing(fn (): bool => $this->userCan);
-        WP_Mock::userFunction('is_admin')->andReturn(true);
-        WP_Mock::userFunction('wp_die')->andReturnUsing(static function ($message = ''): void {
-            throw new WpDieException(is_string($message) ? $message : 'wp_die');
-        });
-
-        // ── JSON responses (AJAX handlers) ────────────────────────────
-        WP_Mock::userFunction('wp_send_json_success')->andReturnUsing(static function ($data = null): void {
-            throw new JsonResponseException(true, $data);
-        });
-        WP_Mock::userFunction('wp_send_json_error')->andReturnUsing(static function ($data = null): void {
-            throw new JsonResponseException(false, $data);
-        });
-
-        // ── Plugin introspection ──────────────────────────────────────
         // Routed through properties so a test can mark specific plugin files
-        // active, or change the reported version, without fighting WP_Mock's
-        // first-match-wins expectation resolution.
-        WP_Mock::userFunction('is_plugin_active')
-            ->andReturnUsing(fn (string $file = ''): bool => in_array($file, $this->activePlugins, true));
-        WP_Mock::userFunction('get_plugin_data')
-            ->andReturnUsing(fn (): array => ['Name' => 'Stub Plugin', 'Version' => $this->pluginVersion]);
-        WP_Mock::userFunction('check_ajax_referer')->andReturn(true);
-
-        // sanitize_text_field is stubbed in TestCase only for the logger's
-        // narrow use; the admin pages pass arbitrary user input through it,
-        // so mirror the real trimming/stripping behaviour closely enough
-        // for the parsing assertions to mean something.
-        WP_Mock::userFunction('sanitize_text_field')
-            ->andReturnUsing(static fn ($v = ''): string => trim(strip_tags((string) $v)));
-    }
-}
-
-/** Thrown by the stubbed wp_die() so terminating paths are assertable. */
-class WpDieException extends \RuntimeException
-{
-}
-
-/** Thrown by the stubbed wp_send_json_* helpers. */
-class JsonResponseException extends \RuntimeException
-{
-    public function __construct(public readonly bool $success, public readonly mixed $data)
-    {
-        parent::__construct($success ? 'json_success' : 'json_error');
+        // active, or change the reported version, mid-test. Functions\when()
+        // sets no call-count expectation, which is what a blanket base-class
+        // stub wants; Functions\expect() would demand at least one call.
+        Functions\when('is_plugin_active')
+            ->alias(fn (string $file = ''): bool => in_array($file, $this->activePlugins, true));
+        Functions\when('get_plugin_data')
+            ->alias(fn (): array => ['Name' => 'Stub Plugin', 'Version' => $this->pluginVersion]);
     }
 }

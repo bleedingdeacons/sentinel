@@ -35,14 +35,12 @@ final class PluginTest extends AdminTestCase
     private function resetInitialised(): void
     {
         $prop = new ReflectionProperty(Plugin::class, 'initialized');
-        $prop->setAccessible(true);
         $prop->setValue(null, false);
     }
 
     private function isInitialised(): bool
     {
         $prop = new ReflectionProperty(Plugin::class, 'initialized');
-        $prop->setAccessible(true);
 
         return (bool) $prop->getValue();
     }

@@ -6,8 +6,8 @@ namespace Sentinel\Tests\Unit\Admin;
 
 use Sentinel\Admin\LogViewerPage;
 use Sentinel\Tests\AdminTestCase;
-use Sentinel\Tests\JsonResponseException;
-use Sentinel\Tests\WpDieException;
+use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
+use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use stdClass;
 
 /**
@@ -78,7 +78,7 @@ final class LogViewerPageTest extends AdminTestCase
     {
         LogViewerPage::enqueueAssets('some-other-page');
         LogViewerPage::registerPage();
-        LogViewerPage::enqueueAssets('sentinel_page_stub');
+        LogViewerPage::enqueueAssets($this->submenuHook('sentinel-logs'));
 
         $this->assertTrue(true, 'enqueue guarded by hook suffix');
     }

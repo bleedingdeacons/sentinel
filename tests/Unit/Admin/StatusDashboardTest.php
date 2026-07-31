@@ -7,7 +7,7 @@ namespace Sentinel\Tests\Unit\Admin;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Admin\StatusDashboard;
 use Sentinel\Tests\AdminTestCase;
-use Sentinel\Tests\JsonResponseException;
+use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
 
 /**
  * Tests for the dashboard status widget.

@@ -4,13 +4,31 @@ declare(strict_types=1);
 
 /**
  * PHPUnit Bootstrap File for Sentinel
+ *
+ * WordPress stand-ins and the Brain Monkey lifecycle come from
+ * bleedingdeacons/wp-mocks, shared across the plugin suite. Its bootstrap loads
+ * Patchwork before anything patchable — Brain Monkey only requires Patchwork
+ * inside Monkey\setUp(), by which time the stubs are defined, so leaving it to
+ * Brain Monkey means any attempt to override a stub dies with
+ * Patchwork\Exceptions\DefinedTooEarly.
+ *
+ * Anything below that defines WordPress functions of its own must therefore
+ * stay after the require, not before it.
+ *
+ * Not loaded here: the `sentinel` stub group. Sentinel *is* the logger, so
+ * wp_log() and Sentinel_Log_Channel come from src/Logger/sentinel-logger.php —
+ * the real thing under test, not a stand-in for it.
  */
 
-// Composer autoloader
+use BleedingDeacons\WpMocks\Bootstrap;
+use BleedingDeacons\WpMocks\WpState;
+
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Initialize WP_Mock
-WP_Mock::bootstrap();
+Bootstrap::load(['wordpress']);
+
+// Makes plugins_url()/plugin_dir_url() answer with Sentinel's own path.
+WpState::$pluginSlug = 'sentinel';
 
 // Define WordPress constants if not already defined.
 //
@@ -98,6 +116,11 @@ if (!defined('SENTINEL_CAPTURE_ERRORS')) {
 
 /**
  * Minimal $wpdb stand-in.
+ *
+ * Kept local rather than using wp-mocks' Doubles\FakeWpdb, which answers every
+ * get_var() with one queued scalar. The logger tests need "SHOW TABLES LIKE"
+ * and COUNT(*) to answer differently at the same time — see $existingTable
+ * against $varReturn below — which that double cannot express.
  *
  * Deliberately a plain class rather than a Mockery double: the logger
  * registers handleShutdown() as a shutdown function, which flushes whatever
@@ -198,15 +221,3 @@ if (!class_exists('Sentinel_Test_Wpdb')) {
 
 global $wpdb;
 $wpdb = new Sentinel_Test_Wpdb();
-
-/**
- * esc_sql() as a real function rather than a WP_Mock stub, for the same
- * reason as $wpdb above: flush() calls it, and the shutdown flush happens
- * after WP_Mock has torn its stubs down.
- */
-if (!function_exists('esc_sql')) {
-    function esc_sql(string $data): string
-    {
-        return addslashes($data);
-    }
-}

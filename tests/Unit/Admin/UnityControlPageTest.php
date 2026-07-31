@@ -7,7 +7,7 @@ namespace Sentinel\Tests\Unit\Admin;
 use ReflectionProperty;
 use Sentinel\Admin\UnityControlPage;
 use Sentinel\Tests\AdminTestCase;
-use Sentinel\Tests\WpDieException;
+use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 
 /**
  * Tests for the Unity Control page.
@@ -51,7 +51,6 @@ final class UnityControlPageTest extends AdminTestCase
     private function resetJustChanged(): void
     {
         $prop = new ReflectionProperty(UnityControlPage::class, 'justChanged');
-        $prop->setAccessible(true);
         $prop->setValue(null, false);
     }
 
