@@ -9,7 +9,7 @@ declare(strict_types=1);
  * Build date: 2026/07/31 22:59:34
  * Requires at least: 6.0
  * Requires PHP: 8.1
- * GitHub Plugin URI: https://github.com/thebleedingdeacons/sentinel
+ * GitHub Plugin URI: https://github.com/bleedingdeacons/sentinel
  * GitHub Branch: main
  * Author: The Bleeding Deacons
  * Author URI: https://github.com/bleedingdeacons/sentinel
