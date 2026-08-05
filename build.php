@@ -678,8 +678,15 @@ class PluginBuilder
             ->format('Y/m/d H:i:s');
 
         // First, try to update an existing "Build date:" header line.
+        //
+        // The tail is matched as [^\r\n]* with a lookahead, not .+$, on purpose.
+        // In PCRE `.` matches \r, so `.+$` swallows the carriage return of a CRLF
+        // line and the replacement writes it back LF-only — one mixed line ending
+        // in an otherwise CRLF file, which fails the PSR-12 gate. `$` in multiline
+        // mode anchors before \n and not before \r, so the CR has to be stepped
+        // over by a lookahead rather than matched, or nothing matches at all.
         $updated = preg_replace(
-            '/^(\s*\*\s*Build date:\s*).+$/mi',
+            '/^([ \t]*\*[ \t]*Build date:[ \t]*)[^\r\n]*(?=\r?$)/mi',
             '${1}' . $buildDate,
             $content,
             1,
@@ -693,11 +700,13 @@ class PluginBuilder
         }
 
         // No existing line — insert one right after the "Version:" header,
-        // preserving the surrounding docblock indentation/alignment.
+        // preserving the surrounding docblock indentation/alignment and the
+        // file's own line ending rather than hardcoding "\n".
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
         $updated = preg_replace_callback(
-            '/^([ \t]*)\*([ \t]*)Version:[ \t]*.+$/mi',
-            static function (array $m) use ($buildDate): string {
-                return $m[0] . "\n" . $m[1] . '*' . $m[2] . 'Build date: ' . $buildDate;
+            '/^([ \t]*)\*([ \t]*)Version:[ \t]*[^\r\n]*(?=\r?$)/mi',
+            static function (array $m) use ($buildDate, $eol): string {
+                return $m[0] . $eol . $m[1] . '*' . $m[2] . 'Build date: ' . $buildDate;
             },
             $content,
             1,
