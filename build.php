@@ -541,7 +541,7 @@ class PluginBuilder
         }
 
         $updated = preg_replace(
-            '/^Stable tag:\s*.+$/mi',
+            '/^Stable tag:[ \t]*[^\r\n]*(?=\r?$)/mi',
             'Stable tag: ' . $this->version,
             $content,
             -1,
@@ -592,7 +592,7 @@ class PluginBuilder
         }
 
         $updated = preg_replace(
-            '/^\*\*Version:\*\*\s*.+$/m',
+            '/^\*\*Version:\*\*[ \t]*[^\r\n]*(?=\r?$)/m',
             '**Version:** ' . $this->version,
             $updated,
             -1,
@@ -634,7 +634,7 @@ class PluginBuilder
         }
 
         $updated = preg_replace(
-            '/^(\s*\*\s*Version:\s*).+$/m',
+            '/^([ \t]*\*[ \t]*Version:[ \t]*)[^\r\n]*(?=\r?$)/m',
             '${1}' . $this->version,
             $content,
             1,
