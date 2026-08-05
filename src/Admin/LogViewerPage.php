@@ -68,12 +68,12 @@ class LogViewerPage
     public static function registerPage(): void
     {
         self::$hookSuffix = (string) add_submenu_page(
-                Plugin::MENU_SLUG,
-                self::PAGE_TITLE,
-                self::MENU_TITLE,
-                self::CAPABILITY,
-                self::PAGE_SLUG,
-                [self::class, 'renderPage']
+            Plugin::MENU_SLUG,
+            self::PAGE_TITLE,
+            self::MENU_TITLE,
+            self::CAPABILITY,
+            self::PAGE_SLUG,
+            [self::class, 'renderPage']
         );
     }
 
@@ -87,18 +87,18 @@ class LogViewerPage
         }
 
         wp_enqueue_style(
-                'sentinel-log-viewer',
-                SENTINEL_PLUGIN_URL . 'assets/log-viewer.css',
-                [],
-                SENTINEL_VERSION
+            'sentinel-log-viewer',
+            SENTINEL_PLUGIN_URL . 'assets/log-viewer.css',
+            [],
+            SENTINEL_VERSION
         );
 
         wp_enqueue_script(
-                'sentinel-log-viewer',
-                SENTINEL_PLUGIN_URL . 'assets/log-viewer.js',
-                [],
-                SENTINEL_VERSION,
-                true
+            'sentinel-log-viewer',
+            SENTINEL_PLUGIN_URL . 'assets/log-viewer.js',
+            [],
+            SENTINEL_VERSION,
+            true
         );
 
         wp_localize_script('sentinel-log-viewer', 'sentinelLogViewer', [
@@ -128,10 +128,10 @@ class LogViewerPage
         }
 
         wp_safe_redirect(
-                add_query_arg(
-                        ['page' => self::PAGE_SLUG, 'cleared' => '1'],
-                        admin_url('admin.php')
-                )
+            add_query_arg(
+                ['page' => self::PAGE_SLUG, 'cleared' => '1'],
+                admin_url('admin.php')
+            )
         );
         exit;
     }
@@ -227,18 +227,17 @@ class LogViewerPage
         }
 
         foreach ($rows as $row) {
-
             $latest = $wpdb->get_row(
-                    $wpdb->prepare(
+                $wpdb->prepare(
                     // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
-                            "SELECT message, context
+                    "SELECT message, context
                  FROM {$escapedTable}
                  WHERE channel = %s AND level = %s
                  ORDER BY id DESC
                  LIMIT 1",
-                            $row->channel,
-                            $row->level
-                    )
+                    $row->channel,
+                    $row->level
+                )
             );
 
             $lastMessage = $latest->message ?? '';
@@ -295,7 +294,7 @@ class LogViewerPage
             </tr>
             </thead>
             <tbody>
-            <?php foreach ($aggregates as $entry):
+            <?php foreach ($aggregates as $entry) :
                 // Pretty-print JSON context when possible so it's readable when expanded
                 // and when copied to clipboard. Falls back to the raw stored value.
                 $prettyContext = '';
@@ -334,13 +333,13 @@ class LogViewerPage
                     <span class="sentinel-log-message"><?php echo esc_html($entry['last_message']); ?></span>
                 </td>
             </tr>
-            <?php if ($entry['last_context'] !== ''): ?>
+                <?php if ($entry['last_context'] !== '') : ?>
                 <tr class="sentinel-log-row--<?php echo esc_attr($entry['level']); ?> sentinel-log-row-context">
                     <td colspan="4" class="sentinel-log-col-context">
                         <pre class="sentinel-log-context-body"><?php echo esc_html($prettyContext); ?></pre>
                     </td>
                 </tr>
-            <?php endif; ?>
+                <?php endif; ?>
             </tbody>
             <?php endforeach; ?>
             </tbody>
@@ -371,13 +370,13 @@ class LogViewerPage
         <div class="wrap">
             <h1><?php echo esc_html(self::PAGE_TITLE); ?></h1>
 
-            <?php if ($cleared): ?>
+            <?php if ($cleared) : ?>
                 <div class="notice notice-success is-dismissible">
                     <p><?php esc_html_e('Log table cleared successfully.', 'sentinel'); ?></p>
                 </div>
             <?php endif; ?>
 
-            <?php if (!$loggerDeployed): ?>
+            <?php if (!$loggerDeployed) : ?>
                 <div class="notice notice-warning">
                     <p>
                         <?php esc_html_e('The shared logger (mu-plugin) is not deployed. Run', 'sentinel'); ?>
@@ -403,7 +402,7 @@ class LogViewerPage
                             <span class="dashicons dashicons-update"></span>
                             <?php esc_html_e('Refresh', 'sentinel'); ?>
                         </button>
-                        <?php if ($tableExists && $data['total_rows'] > 0): ?>
+                        <?php if ($tableExists && $data['total_rows'] > 0) : ?>
                             <form method="post" style="display: inline;">
                                 <?php wp_nonce_field(self::CLEAR_ACTION, '_sentinel_nonce'); ?>
                                 <button type="submit"
@@ -423,7 +422,7 @@ class LogViewerPage
                     <?php self::renderAggregateTable(); ?>
                 </div>
                 <br>
-                <?php if ($data['table_name']): ?>
+                <?php if ($data['table_name']) : ?>
                     <p class="description sentinel-table-name">
                         <?php esc_html_e('Database table:', 'sentinel'); ?>
                         <code><?php echo esc_html($data['table_name']); ?></code>

@@ -262,43 +262,43 @@ class StatusDashboard
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($plugins as $info): ?>
+                    <?php foreach ($plugins as $info) : ?>
                         <tr>
                             <td class="sentinel-plugin-name"><?php echo esc_html($info['label']); ?></td>
                             <td>
-                                <?php if (!empty($info['killSwitch'])): ?>
+                                <?php if (!empty($info['killSwitch'])) : ?>
                                     <span class="sentinel-badge sentinel-badge--killed" title="<?php echo esc_attr__('UNITY_KILL is defined as true in wp-config.php', 'sentinel'); ?>">
                                         <?php esc_html_e('Disabled (Kill Switch)', 'sentinel'); ?>
                                     </span>
-                                <?php elseif (!empty($info['unavailable'])): ?>
+                                <?php elseif (!empty($info['unavailable'])) : ?>
                                     <span class="sentinel-badge sentinel-badge--warn" title="<?php echo esc_attr__('Unity is disabled, so this plugin cannot function.', 'sentinel'); ?>">
                                         <?php esc_html_e('Unavailable', 'sentinel'); ?>
                                     </span>
-                                <?php elseif ($info['active']): ?>
+                                <?php elseif ($info['active']) : ?>
                                     <span class="sentinel-badge sentinel-badge--active">
                                         <?php esc_html_e('Active', 'sentinel'); ?>
                                     </span>
-                                <?php elseif ($info['installed']): ?>
+                                <?php elseif ($info['installed']) : ?>
                                     <span class="sentinel-badge sentinel-badge--inactive">
                                         <?php esc_html_e('Inactive', 'sentinel'); ?>
                                     </span>
-                                <?php else: ?>
+                                <?php else : ?>
                                     <span class="sentinel-badge sentinel-badge--missing">
                                         <?php esc_html_e('Not Installed', 'sentinel'); ?>
                                     </span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($info['version']): ?>
+                                <?php if ($info['version']) : ?>
                                     <code><?php echo esc_html($info['version']); ?></code>
-                                <?php else: ?>
+                                <?php else : ?>
                                     <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($info['buildDate']): ?>
+                                <?php if ($info['buildDate']) : ?>
                                     <span class="sentinel-build-date"><?php echo esc_html($info['buildDate']); ?></span>
-                                <?php else: ?>
+                                <?php else : ?>
                                     <span class="sentinel-na"><?php esc_html_e('N/A', 'sentinel'); ?></span>
                                 <?php endif; ?>
                             </td>
@@ -324,7 +324,7 @@ class StatusDashboard
             $missing  = array_filter($mandatoryPlugins, fn($p) => !$p['installed']);
             ?>
 
-            <?php if ($unityMandatory && !empty($plugins['unity']['killSwitch'])): ?>
+            <?php if ($unityMandatory && !empty($plugins['unity']['killSwitch'])) : ?>
                 <p class="sentinel-help sentinel-help--alert">
                     <strong><?php esc_html_e('Unity is disabled.', 'sentinel'); ?></strong>
                     <?php
@@ -341,7 +341,7 @@ class StatusDashboard
                 </p>
             <?php endif; ?>
 
-            <?php if (!empty($inactive)): ?>
+            <?php if (!empty($inactive)) : ?>
                 <p class="sentinel-help">
                     <?php
                     $names = implode(', ', array_column($inactive, 'label'));
@@ -358,7 +358,7 @@ class StatusDashboard
                 </div>
             <?php endif; ?>
 
-            <?php if (!empty($missing)): ?>
+            <?php if (!empty($missing)) : ?>
                 <p class="sentinel-help">
                     <?php
                     $names = implode(', ', array_column($missing, 'label'));
