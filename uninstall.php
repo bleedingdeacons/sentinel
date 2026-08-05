@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Sentinel Uninstall Handler
  *
@@ -11,6 +9,8 @@ declare(strict_types=1);
  * Settings → Sentinel → "Drop log table on uninstall".
  * Removes Sentinel logger constants from wp-config.php.
  */
+
+declare(strict_types=1);
 
 if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
