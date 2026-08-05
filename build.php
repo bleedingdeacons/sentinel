@@ -102,7 +102,7 @@ class PluginBuilder
             'vendor/*/tests',
             'vendor/*/Test',
             'vendor/*/Tests',
-            'vendor/bin',
+            'vendor/bin',
 
             // Dev artefacts that must never ship
             '.phpunit.result.cache',
