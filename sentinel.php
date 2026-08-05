@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
@@ -16,6 +14,8 @@ declare(strict_types=1);
  * Contact: thebleedingdeacons@gmail.com
  * License: MIT (Modified)
  */
+
+declare(strict_types=1);
 
 if (!defined('ABSPATH')) {
     exit;
@@ -70,7 +70,6 @@ add_action('plugins_loaded', function (): void {
         \Sentinel\Plugin::init();
 
         do_action('sentinel/loaded');
-
     } catch (\Exception $e) {
         function_exists('wp_log')
             ? wp_log('sentinel')->error('Sentinel Plugin Initialization Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
@@ -85,7 +84,6 @@ add_action('plugins_loaded', function (): void {
                 echo '<div class="notice notice-error is-dismissible"><p>' . $message . '</p></div>';
             });
         }
-
     } catch (\Throwable $e) {
         function_exists('wp_log')
             ? wp_log('sentinel')->critical('Sentinel Plugin Fatal Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
