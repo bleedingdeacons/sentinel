@@ -9,5 +9,42 @@
     <arg name="extensions" value="php"/>
     <arg name="colors"/>
 
-    <rule ref="PSR12"/>
+    <!-- Not a PSR-4 class file. LoggerManager copies this into mu-plugins/ at
+         runtime and build.php syncs its own `Version:` header, so it is a
+         single-file WordPress mu-plugin: global namespace, Sentinel_-prefixed
+         class names, three classes in the one file. Every one of those is a
+         PSR-1 violation and every one is required by what the file is. -->
+    <exclude-pattern>src/Logger/sentinel-logger\.php</exclude-pattern>
+
+    <rule ref="PSR12">
+        <!-- Line endings are normalised by git (`* text=auto`): the index is LF, the
+             Windows working copy is CRLF. This sniff only ever fires locally. -->
+        <exclude name="Generic.Files.LineEndings"/>
+
+        <!-- PSR-12's 120-character limit. The long lines here are HTML in shortcode
+             output and option/array literals, where wrapping costs more than it gives. -->
+        <exclude name="Generic.Files.LineLength"/>
+
+        <!-- Every source file carries the mandatory WordPress
+             `if (!defined('ABSPATH')) { exit; }` guard, which PSR-1 counts as a side
+             effect sitting alongside the class declaration. Not removable. -->
+        <exclude name="PSR1.Files.SideEffects"/>
+    </rule>
+
+    <!-- Tests use snake_case BDD method names (it_returns_null_when_absent). -->
+    <rule ref="PSR1.Methods.CamelCapsMethodName">
+        <exclude-pattern>tests/*</exclude-pattern>
+    </rule>
+
+    <!-- Test doubles, fakes and WP_* stubs are deliberately global, deliberately not
+         PascalCase, and deliberately grouped in the file that uses them. -->
+    <rule ref="PSR1.Classes.ClassDeclaration">
+        <exclude-pattern>tests/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Classes.ValidClassName">
+        <exclude-pattern>tests/*</exclude-pattern>
+    </rule>
+    <rule ref="PSR12.Files.FileHeader">
+        <exclude-pattern>tests/*</exclude-pattern>
+    </rule>
 </ruleset>

@@ -572,7 +572,7 @@ class UnityControlPage
 
             <?php settings_errors('sentinel_unity_control'); ?>
 
-            <?php if (self::$justChanged): ?>
+            <?php if (self::$justChanged) : ?>
                 <?php
                 // After a successful enable/disable we briefly show the
                 // success notice and then reload. The reload is essential:
@@ -614,11 +614,11 @@ class UnityControlPage
                             <?php esc_html_e('Runtime status', 'sentinel'); ?>
                         </th>
                         <td>
-                            <?php if ($killed): ?>
+                            <?php if ($killed) : ?>
                                 <strong style="color:#d63638;">
                                     <?php esc_html_e('Disabled (kill switch engaged)', 'sentinel'); ?>
                                 </strong>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <strong style="color:#00a32a;">
                                     <?php esc_html_e('Enabled', 'sentinel'); ?>
                                 </strong>
@@ -635,9 +635,9 @@ class UnityControlPage
                             ?>
                         </th>
                         <td>
-                            <?php if ($inFile): ?>
+                            <?php if ($inFile) : ?>
                                 <?php esc_html_e('Defined', 'sentinel'); ?>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <?php esc_html_e('Not defined', 'sentinel'); ?>
                             <?php endif; ?>
                         </td>
@@ -645,9 +645,9 @@ class UnityControlPage
                     <tr>
                         <th scope="row"><?php esc_html_e('wp-config.php location', 'sentinel'); ?></th>
                         <td>
-                            <?php if ($configPath !== null): ?>
+                            <?php if ($configPath !== null) : ?>
                                 <code><?php echo esc_html($configPath); ?></code>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <em><?php esc_html_e('Not found', 'sentinel'); ?></em>
                             <?php endif; ?>
                         </td>
@@ -655,9 +655,9 @@ class UnityControlPage
                     <tr>
                         <th scope="row"><?php esc_html_e('Writable by web server', 'sentinel'); ?></th>
                         <td>
-                            <?php if ($writable): ?>
+                            <?php if ($writable) : ?>
                                 <?php esc_html_e('Yes', 'sentinel'); ?>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <strong><?php esc_html_e('No', 'sentinel'); ?></strong>
                                 — <?php esc_html_e('toggle controls below are unavailable; use the manual instructions.', 'sentinel'); ?>
                             <?php endif; ?>
@@ -666,7 +666,7 @@ class UnityControlPage
                 </tbody>
             </table>
 
-            <?php if ($killed && !$inFile): ?>
+            <?php if ($killed && !$inFile) : ?>
                 <div class="notice notice-warning inline" style="margin-top:1em;">
                     <p>
                         <?php
@@ -683,7 +683,7 @@ class UnityControlPage
             <!-- Disable / Enable controls -->
             <h2><?php esc_html_e('Toggle Unity', 'sentinel'); ?></h2>
 
-            <?php if ($killed): ?>
+            <?php if ($killed) : ?>
                 <p>
                     <?php esc_html_e('Unity is currently disabled. Re-enabling will remove the kill switch from wp-config.php and Unity will boot normally on the next page load.', 'sentinel'); ?>
                 </p>
@@ -696,7 +696,7 @@ class UnityControlPage
                         </button>
                     </p>
                 </form>
-            <?php else: ?>
+            <?php else : ?>
                 <div class="notice notice-error inline" style="margin:1em 0;">
                     <p>
                         <strong><?php esc_html_e('Disabling Unity will also disable:', 'sentinel'); ?></strong>
@@ -740,11 +740,11 @@ class UnityControlPage
                             <?php esc_html_e('Current mode', 'sentinel'); ?>
                         </th>
                         <td>
-                            <?php if ($isProduction): ?>
+                            <?php if ($isProduction) : ?>
                                 <strong style="color:#00a32a;">
                                     <?php esc_html_e('Production (developer UI hidden)', 'sentinel'); ?>
                                 </strong>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <strong style="color:#d63638;">
                                     <?php esc_html_e('Development (developer UI exposed)', 'sentinel'); ?>
                                 </strong>
@@ -761,9 +761,9 @@ class UnityControlPage
                             ?>
                         </th>
                         <td>
-                            <?php if ($prodInFile): ?>
+                            <?php if ($prodInFile) : ?>
                                 <?php esc_html_e('Defined', 'sentinel'); ?>
-                            <?php else: ?>
+                            <?php else : ?>
                                 <?php esc_html_e('Not defined (using default: true)', 'sentinel'); ?>
                             <?php endif; ?>
                         </td>
@@ -771,7 +771,7 @@ class UnityControlPage
                 </tbody>
             </table>
 
-            <?php if (!$isProduction && !$prodInFile): ?>
+            <?php if (!$isProduction && !$prodInFile) : ?>
                 <div class="notice notice-warning inline" style="margin-top:1em;">
                     <p>
                         <?php
@@ -785,7 +785,7 @@ class UnityControlPage
                 </div>
             <?php endif; ?>
 
-            <?php if ($isProduction): ?>
+            <?php if ($isProduction) : ?>
                 <p>
                     <?php esc_html_e('Switching to development mode will write define( \'PRODUCTION\', false ); to wp-config.php and expose developer-only UI on the next page load.', 'sentinel'); ?>
                 </p>
@@ -798,7 +798,7 @@ class UnityControlPage
                         </button>
                     </p>
                 </form>
-            <?php else: ?>
+            <?php else : ?>
                 <p>
                     <?php esc_html_e('Switching back to production mode will remove the PRODUCTION define from wp-config.php (the runtime default is true). Developer-only UI will be hidden on the next page load.', 'sentinel'); ?>
                 </p>
@@ -828,7 +828,7 @@ class UnityControlPage
 define( 'UNITY_KILL', true );  // Disable Unity
 // define( 'UNITY_KILL', false ); // Or remove the line entirely to re-enable
 
-<?php echo esc_html(self::PRODUCTION_MARKER); ?>
+        <?php echo esc_html(self::PRODUCTION_MARKER); ?>
 define( 'PRODUCTION', false ); // Development mode (expose developer UI)
 // Remove the line entirely to return to production mode (the default)</code></pre>
         </div>

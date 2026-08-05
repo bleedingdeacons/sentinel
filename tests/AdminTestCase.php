@@ -185,11 +185,13 @@ abstract class AdminTestCase extends TestCase
     {
         // The Settings API. Registration is a side effect these tests do not
         // assert on, so it is enough that the calls are harmless.
-        foreach ([
+        foreach (
+            [
             'add_settings_error', 'add_settings_field', 'add_settings_section',
             'register_setting', 'do_settings_sections', 'settings_errors',
             'settings_fields', 'submit_button',
-        ] as $fn) {
+            ] as $fn
+        ) {
             Functions\when($fn)->justReturn(null);
         }
 
