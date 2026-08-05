@@ -19,10 +19,11 @@
         "php": ">=8.1"
     },
     "require-dev": {
-        "bleedingdeacons/wp-mocks": "^1.0",
+        "bleedingdeacons/wp-mocks": "^1.5.2",
         "mockery/mockery": "^1.4",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^10.5",
+        "squizlabs/php_codesniffer": "^4.0",
         "szepeviktor/phpstan-wordpress": "^2.0"
     },
     "autoload": {
@@ -40,6 +41,8 @@
         "build:production": "php build.php build:production",
         "build:dev": "php build.php build:dev",
         "build:clean": "php build.php clean",
+        "phpcs": "phpcs --standard=.phpcs.xml.dist",
+        "phpcs:fix": "phpcbf --standard=.phpcs.xml.dist",
         "phpstan": "phpstan analyse --memory-limit=1G",
         "test": "phpunit"
     },
