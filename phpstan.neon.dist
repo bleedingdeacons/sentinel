@@ -39,12 +39,14 @@ parameters:
     # default, so a stale pattern would fail the gate. Matches amber.
     reportUnmatchedIgnoredErrors: false
     ignoreErrors:
-        - '#Function get_plugin_data not found#'
-        - '#Function dbDelta not found#'
+        # get_plugin_data and dbDelta entries were removed from here once
+        # wordpress-stubs resolved them and they stopped matching.
+        #
         # Defined in sentinel.php, but from runtime calls (plugin_dir_path(),
         # plugin_dir_url()) rather than literals, so scanning the file is not
         # enough for PHPStan to fold them into known constants. Named one by
         # one rather than by wildcard, so a typo'd constant is still reported.
+        # SENTINEL_VERSION is not among them: it is assigned from a literal, so
+        # scanning does fold it and its entry had stopped matching.
         - '#Constant SENTINEL_PLUGIN_DIR not found#'
         - '#Constant SENTINEL_PLUGIN_URL not found#'
-        - '#Constant SENTINEL_VERSION not found#'
