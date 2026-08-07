@@ -300,9 +300,13 @@ class LogViewerPage
                 $prettyContext = '';
                 if ($entry['last_context'] !== '') {
                     $decoded = json_decode($entry['last_context'], true);
-                    $prettyContext = (json_last_error() === JSON_ERROR_NONE && $decoded !== null)
+                    $pretty = (json_last_error() === JSON_ERROR_NONE && $decoded !== null)
                             ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                            : $entry['last_context'];
+                            : false;
+                    // Re-encoding can still fail on what json_decode accepted
+                    // (malformed UTF-8, depth). Fall back to the raw stored
+                    // context rather than blanking the panel.
+                    $prettyContext = $pretty === false ? $entry['last_context'] : $pretty;
                 }
                 ?>
             <tbody class="sentinel-log-group"
