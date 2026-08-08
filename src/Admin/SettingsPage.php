@@ -633,6 +633,14 @@ TXT;
             }
         }
 
+        // Both rewrite branches above go through preg_replace(), which returns
+        // null on a PCRE failure. Leave wp-config.php untouched rather than
+        // handing null to atomicWrite() — under strict_types that is a
+        // TypeError raised part-way through editing the site's config.
+        if ($contents === null) {
+            return false;
+        }
+
         return self::atomicWrite($path, $contents);
     }
 
@@ -655,6 +663,10 @@ TXT;
         $pattern = '/^\s*define\s*\(\s*[\'"]' . preg_quote($constant, '/') . '[\'"]\s*,\s*.+?\)\s*;\s*\n?/m';
         $updated = preg_replace($pattern, '', $contents);
 
+        if ($updated === null) {
+            return false;
+        }
+
         if ($updated === $contents) {
             return true; // Nothing to remove.
         }
@@ -672,8 +684,13 @@ TXT;
             $updated = str_replace(self::WP_CONFIG_MARKER, '', $updated);
         }
 
-        // Clean up excessive blank lines.
-        $updated = preg_replace("/\n{3,}/", "\n\n", $updated);
+        // Clean up excessive blank lines. Cosmetic only, so a PCRE failure
+        // keeps the uncollapsed content rather than abandoning a removal that
+        // has already succeeded.
+        $collapsed = preg_replace("/\n{3,}/", "\n\n", $updated);
+        if ($collapsed !== null) {
+            $updated = $collapsed;
+        }
 
         return self::atomicWrite($path, $updated);
     }
