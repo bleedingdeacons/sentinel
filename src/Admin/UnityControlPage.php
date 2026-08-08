@@ -361,8 +361,13 @@ class UnityControlPage
         $updated = str_replace(self::WP_CONFIG_MARKER . "\n", '', $updated);
         $updated = str_replace(self::WP_CONFIG_MARKER, '', $updated);
 
-        // Tidy excessive blank lines left by the removal.
-        $updated = preg_replace("/\n{3,}/", "\n\n", $updated);
+        // Tidy excessive blank lines left by the removal. Cosmetic only, so a
+        // PCRE failure keeps the uncollapsed content rather than abandoning a
+        // removal that has already succeeded.
+        $collapsed = preg_replace("/\n{3,}/", "\n\n", $updated);
+        if ($collapsed !== null) {
+            $updated = $collapsed;
+        }
 
         if ($updated === $contents) {
             return true; // Nothing was set; nothing to do.
@@ -510,7 +515,12 @@ class UnityControlPage
         $updated = str_replace(self::PRODUCTION_MARKER . "\n", '', $updated);
         $updated = str_replace(self::PRODUCTION_MARKER, '', $updated);
 
-        $updated = preg_replace("/\n{3,}/", "\n\n", $updated);
+        // Cosmetic tidy — see removeKillSwitch() on why a PCRE failure here
+        // keeps the uncollapsed content instead of failing the removal.
+        $collapsed = preg_replace("/\n{3,}/", "\n\n", $updated);
+        if ($collapsed !== null) {
+            $updated = $collapsed;
+        }
 
         if ($updated === $contents) {
             return true;
