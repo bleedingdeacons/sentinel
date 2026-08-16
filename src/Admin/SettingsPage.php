@@ -82,6 +82,7 @@ TXT;
      * Unity is disabled.
      */
     private const DEFAULT_OPTIONAL_PLUGINS = <<<TXT
+promises/promises.php|Promises
 reach/reach.php|Reach
 stalwart/stalwart.php|Stalwart
 steward/steward.php|Steward
