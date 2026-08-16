@@ -53,6 +53,7 @@ class StatusDashboard
         'amber',
         'integrity',
         'reconcile',
+        'promises',
         'reach',
         'stalwart',
         'steward',

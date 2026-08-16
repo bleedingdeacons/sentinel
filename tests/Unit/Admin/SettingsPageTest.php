@@ -92,6 +92,24 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame('Reach', $plugins['reach']['label']);
     }
 
+    /**
+     * Promises is optional rather than mandatory: it is an MCP server, present
+     * on the sites that connect a client and absent everywhere else, so a site
+     * without it is not a site with something missing.
+     *
+     * @test
+     */
+    public function promises_is_monitored_as_an_optional_plugin(): void
+    {
+        $plugins = SettingsPage::getOptionalPlugins();
+
+        $this->assertArrayHasKey('promises', $plugins);
+        $this->assertSame('promises/promises.php', $plugins['promises']['file']);
+        $this->assertSame('Promises', $plugins['promises']['label']);
+
+        $this->assertArrayNotHasKey('promises', SettingsPage::getMandatoryPlugins());
+    }
+
     /** @test */
     public function parser_derives_a_humanised_label_when_none_is_given(): void
     {

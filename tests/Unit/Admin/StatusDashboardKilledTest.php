@@ -46,4 +46,28 @@ final class StatusDashboardKilledTest extends AdminTestCase
         // The alert help block explains the situation.
         $this->assertStringContainsString('Unity is disabled', $html);
     }
+
+    /**
+     * Promises reads every one of its tools' data through Unity and boots from
+     * `unity/loaded`, so a kill switch leaves it installed, active and unable
+     * to answer a single request. It has to be stood down with the rest.
+     *
+     * @test
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function render_stands_promises_down_with_the_other_unity_dependents(): void
+    {
+        define('UNITY_KILL', true);
+
+        $this->makePlugin('unity/unity.php', '2026-08-16');
+        $this->makePlugin('promises/promises.php', '2026-08-16');
+        $this->activePlugins = ['unity/unity.php', 'promises/promises.php'];
+        $this->monitor("unity/unity.php|Unity", "promises/promises.php|Promises");
+
+        $html = $this->capture([StatusDashboard::class, 'render']);
+
+        $this->assertStringContainsString('Promises', $html);
+        $this->assertStringContainsString('Unavailable', $html);
+    }
 }
