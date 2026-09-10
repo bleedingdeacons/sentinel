@@ -110,6 +110,33 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertArrayNotHasKey('promises', SettingsPage::getMandatoryPlugins());
     }
 
+    /**
+     * Fellowship is mandatory rather than optional, which is a deliberate
+     * difference from Reach and Promises beside it.
+     *
+     * <b>It is the server half of a pair.</b> Link is on members' phones,
+     * and a handset whose Fellowship has stopped does not say so — it goes
+     * on polling and quietly collects nothing. That is the failure the
+     * stability indicator exists to catch, and it cannot catch it for a
+     * plugin it only watches when present.
+     *
+     * The cost is the ordinary cost of mandatory: a site that has never
+     * installed Fellowship now reports it missing. Move it to the optional
+     * list if that is ever the wrong trade.
+     *
+     * @test
+     */
+    public function fellowship_is_monitored_as_a_mandatory_plugin(): void
+    {
+        $plugins = SettingsPage::getMandatoryPlugins();
+
+        $this->assertArrayHasKey('fellowship', $plugins);
+        $this->assertSame('fellowship/fellowship.php', $plugins['fellowship']['file']);
+        $this->assertSame('Fellowship', $plugins['fellowship']['label']);
+
+        $this->assertArrayNotHasKey('fellowship', SettingsPage::getOptionalPlugins());
+    }
+
     /** @test */
     public function parser_derives_a_humanised_label_when_none_is_given(): void
     {

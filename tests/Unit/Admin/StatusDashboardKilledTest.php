@@ -70,4 +70,33 @@ final class StatusDashboardKilledTest extends AdminTestCase
         $this->assertStringContainsString('Promises', $html);
         $this->assertStringContainsString('Unavailable', $html);
     }
+
+    /**
+     * Fellowship registers into Unity's container and boots from
+     * `unity/loaded`, so a kill switch leaves it installed, active, and
+     * unable to answer a handset. It has to be stood down with the rest.
+     *
+     * Worth its own test rather than trusting the list: Fellowship is the
+     * server half of Link, and the failure it would otherwise hide is the
+     * quiet one — a phone that goes on polling and collects nothing,
+     * reporting no error of its own.
+     *
+     * @test
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function render_stands_fellowship_down_with_the_other_unity_dependents(): void
+    {
+        define('UNITY_KILL', true);
+
+        $this->makePlugin('unity/unity.php', '2026-09-10');
+        $this->makePlugin('fellowship/fellowship.php', '2026-09-10');
+        $this->activePlugins = ['unity/unity.php', 'fellowship/fellowship.php'];
+        $this->monitor("unity/unity.php|Unity", "fellowship/fellowship.php|Fellowship");
+
+        $html = $this->capture([StatusDashboard::class, 'render']);
+
+        $this->assertStringContainsString('Fellowship', $html);
+        $this->assertStringContainsString('Unavailable', $html);
+    }
 }

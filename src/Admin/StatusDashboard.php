@@ -55,6 +55,7 @@ class StatusDashboard
         'reconcile',
         'promises',
         'reach',
+        'fellowship',
         'stalwart',
         'steward',
         'trusted',
