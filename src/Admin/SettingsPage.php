@@ -71,6 +71,7 @@ scrutiny/scrutiny.php|Scrutiny
 amber/amber.php|Amber
 integrity/integrity.php|Integrity
 reconcile/reconcile.php|Reconcile
+fellowship/fellowship.php|Fellowship
 concordance/concordance.php|Concordance
 TXT;
 
