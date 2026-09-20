@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Sentinel\Tests\TestCase;
 
 /**
@@ -14,7 +16,7 @@ use Sentinel\Tests\TestCase;
  */
 class LogChannelTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function getChannel_returns_the_channel_name(): void
     {
         $logger = \Sentinel_Logger::instance();
@@ -23,7 +25,7 @@ class LogChannelTest extends TestCase
         $this->assertSame('my-plugin', $channel->getChannel());
     }
 
-    /** @test */
+    #[Test]
     public function channel_name_is_sanitized(): void
     {
         // sanitize_key is a WP function; the constructor calls it, so we test
@@ -35,10 +37,8 @@ class LogChannelTest extends TestCase
         $this->assertMatchesRegularExpression('/^[a-z0-9_-]+$/', $name);
     }
 
-    /**
-     * @test
-     * @dataProvider psr3LevelProvider
-     */
+    #[DataProvider('psr3LevelProvider')]
+    #[Test]
     public function convenience_method_exists_for_each_psr3_level(string $level): void
     {
         $channel = \Sentinel_Logger::channel('test-levels');
@@ -49,10 +49,8 @@ class LogChannelTest extends TestCase
         );
     }
 
-    /**
-     * @test
-     * @dataProvider psr3LevelProvider
-     */
+    #[DataProvider('psr3LevelProvider')]
+    #[Test]
     public function log_method_accepts_level_string(string $level): void
     {
         $channel = \Sentinel_Logger::channel('test-log');

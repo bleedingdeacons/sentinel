@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use ReflectionProperty;
 use Sentinel\Admin\UnityControlPage;
 use Sentinel\Tests\AdminTestCase;
@@ -13,9 +17,8 @@ use Sentinel\Tests\AdminTestCase;
  * runtime-killed and development-mode render paths (which need the real
  * constants defined, so they run in isolated processes), and the
  * marker-present-insert / no-op writer branches.
- *
- * @covers \Sentinel\Admin\UnityControlPage
  */
+#[CoversClass(\Sentinel\Admin\UnityControlPage::class)]
 final class UnityControlPageExtraTest extends AdminTestCase
 {
     private const KILL_MARKER = '/* Unity Kill Switch (managed by Sentinel) */';
@@ -51,12 +54,9 @@ final class UnityControlPageExtraTest extends AdminTestCase
     }
 
     // ── runtime-killed render (isolated: defines UNITY_KILL) ──────────────
-
-    /**
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_reflects_the_kill_switch_engaged_at_runtime(): void
     {
         define('UNITY_KILL', true);
@@ -70,11 +70,9 @@ final class UnityControlPageExtraTest extends AdminTestCase
         $this->assertStringContainsString('Enable Unity', $html);
     }
 
-    /**
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_warns_when_killed_at_runtime_but_not_in_the_file(): void
     {
         define('UNITY_KILL', true);
@@ -87,12 +85,9 @@ final class UnityControlPageExtraTest extends AdminTestCase
     }
 
     // ── development-mode render (isolated: defines PRODUCTION false) ──────
-
-    /**
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_reflects_development_mode_at_runtime(): void
     {
         define('PRODUCTION', false);
@@ -107,8 +102,7 @@ final class UnityControlPageExtraTest extends AdminTestCase
     }
 
     // ── writer marker-insert branches (in-process) ───────────────────────
-
-    /** @test */
+    #[Test]
     public function disable_inserts_under_an_existing_marker_without_a_define(): void
     {
         // Marker present but no define line → the "insert under marker" branch.
@@ -121,7 +115,7 @@ final class UnityControlPageExtraTest extends AdminTestCase
         $this->assertSame(1, substr_count($config, self::KILL_MARKER));
     }
 
-    /** @test */
+    #[Test]
     public function production_off_inserts_under_an_existing_marker_without_a_define(): void
     {
         $this->writeWpConfig("<?php\n" . self::PROD_MARKER . "\n\$table_prefix = 'wp_';\n");
@@ -134,8 +128,7 @@ final class UnityControlPageExtraTest extends AdminTestCase
     }
 
     // ── writer no-op branches (value already correct) ────────────────────
-
-    /** @test */
+    #[Test]
     public function disabling_when_already_true_is_a_noop_success(): void
     {
         $this->writeWpConfig("<?php\n" . self::KILL_MARKER . "\ndefine( 'UNITY_KILL', true );\n");
@@ -146,7 +139,7 @@ final class UnityControlPageExtraTest extends AdminTestCase
         $this->assertSame($before, $this->readWpConfig());
     }
 
-    /** @test */
+    #[Test]
     public function production_off_when_already_false_is_a_noop_success(): void
     {
         $this->writeWpConfig("<?php\n" . self::PROD_MARKER . "\ndefine( 'PRODUCTION', false );\n");

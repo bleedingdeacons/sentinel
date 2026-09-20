@@ -631,8 +631,12 @@ if ($sentinel_capture_errors) {
 
     set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) use ($sentinel_previous_error_handler) {
 
-        // Respect error suppression with @
-        if (error_reporting() === 0) {
+        // Respect error suppression with @. Since PHP 8.0 the operator sets a
+        // non-zero mask (E_ERROR|E_CORE_ERROR|E_COMPILE_ERROR|E_USER_ERROR|
+        // E_RECOVERABLE_ERROR|E_PARSE) rather than zero, so the old
+        // `error_reporting() === 0` test never fired and suppressed errors
+        // were logged anyway. Test the mask against this error instead.
+        if (!(error_reporting() & $errno)) {
             return false;
         }
 
@@ -644,7 +648,6 @@ if ($sentinel_capture_errors) {
             E_USER_NOTICE       => Sentinel_Log_Level::NOTICE,
             E_DEPRECATED        => Sentinel_Log_Level::NOTICE,
             E_USER_DEPRECATED   => Sentinel_Log_Level::NOTICE,
-            E_STRICT            => Sentinel_Log_Level::NOTICE,
             E_USER_ERROR        => Sentinel_Log_Level::ERROR,
             E_RECOVERABLE_ERROR => Sentinel_Log_Level::ERROR,
         ];

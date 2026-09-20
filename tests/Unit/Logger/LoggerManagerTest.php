@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
 use BleedingDeacons\WpMocks\TestCase;
 use Sentinel\Logger\LoggerManager;
 
@@ -52,8 +53,7 @@ class LoggerManagerTest extends TestCase
     }
 
     // ── sourcePath ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function sourcePath_points_to_logger_file_in_plugin_dir(): void
     {
         $path = LoggerManager::sourcePath();
@@ -62,15 +62,14 @@ class LoggerManagerTest extends TestCase
         $this->assertStringStartsWith(SENTINEL_PLUGIN_DIR, $path);
     }
 
-    /** @test */
+    #[Test]
     public function sourcePath_file_actually_exists(): void
     {
         $this->assertFileExists(LoggerManager::sourcePath());
     }
 
     // ── destinationPath ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function destinationPath_points_to_mu_plugins(): void
     {
         $path = LoggerManager::destinationPath();
@@ -80,8 +79,7 @@ class LoggerManagerTest extends TestCase
     }
 
     // ── isDeployed ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function isDeployed_returns_false_when_file_missing(): void
     {
         // The temp WPMU_PLUGIN_DIR won't have the file
@@ -93,8 +91,7 @@ class LoggerManagerTest extends TestCase
     }
 
     // ── isCurrentVersion ────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function isCurrentVersion_returns_false_when_dest_missing(): void
     {
         // When destination doesn't exist, versions can't match
@@ -107,8 +104,7 @@ class LoggerManagerTest extends TestCase
     }
 
     // ── Legacy removal ──────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function removeLegacy_does_not_error_when_no_legacy_files_exist(): void
     {
         // Should be a no-op with no exceptions

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use ReflectionProperty;
 use Sentinel\Plugin;
 use Sentinel\Tests\AdminTestCase;
@@ -45,7 +46,7 @@ final class PluginTest extends AdminTestCase
         return (bool) $prop->getValue();
     }
 
-    /** @test */
+    #[Test]
     public function init_wires_the_admin_surface_once(): void
     {
         Plugin::init();
@@ -53,7 +54,7 @@ final class PluginTest extends AdminTestCase
         $this->assertTrue($this->isInitialised());
     }
 
-    /** @test */
+    #[Test]
     public function init_is_idempotent(): void
     {
         Plugin::init();
@@ -64,7 +65,7 @@ final class PluginTest extends AdminTestCase
         $this->assertTrue($this->isInitialised());
     }
 
-    /** @test */
+    #[Test]
     public function register_top_level_menu_adds_the_sentinel_menu(): void
     {
         Plugin::registerTopLevelMenu();
@@ -72,7 +73,7 @@ final class PluginTest extends AdminTestCase
         $this->assertTrue(true, 'menu registered');
     }
 
-    /** @test */
+    #[Test]
     public function duplicate_submenu_entry_is_removed(): void
     {
         // WordPress auto-creates a first submenu whose slug equals the
@@ -91,7 +92,7 @@ final class PluginTest extends AdminTestCase
         $this->assertSame('sentinel-settings', $remaining[0][2]);
     }
 
-    /** @test */
+    #[Test]
     public function submenu_cleanup_is_a_no_op_when_there_is_no_submenu(): void
     {
         $GLOBALS['submenu'] = [];
@@ -101,7 +102,7 @@ final class PluginTest extends AdminTestCase
         $this->assertSame([], $GLOBALS['submenu']);
     }
 
-    /** @test */
+    #[Test]
     public function submenu_cleanup_leaves_a_menu_without_a_duplicate_alone(): void
     {
         $GLOBALS['submenu'] = [

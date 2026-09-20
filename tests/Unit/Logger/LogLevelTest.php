@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
 /**
@@ -31,15 +31,14 @@ class LogLevelTest extends TestCase
     }
 
     // ── Sentinel_Log_Level::meetsThreshold ──────────────────────────
-
-    /** @test */
+    #[Test]
     public function emergency_meets_every_threshold(): void
     {
         $this->assertTrue(\Sentinel_Log_Level::meetsThreshold('emergency', 'emergency'));
         $this->assertTrue(\Sentinel_Log_Level::meetsThreshold('emergency', 'debug'));
     }
 
-    /** @test */
+    #[Test]
     public function debug_only_meets_debug_threshold(): void
     {
         $this->assertTrue(\Sentinel_Log_Level::meetsThreshold('debug', 'debug'));
@@ -47,7 +46,7 @@ class LogLevelTest extends TestCase
         $this->assertFalse(\Sentinel_Log_Level::meetsThreshold('debug', 'error'));
     }
 
-    /** @test */
+    #[Test]
     public function warning_meets_warning_and_below(): void
     {
         $this->assertTrue(\Sentinel_Log_Level::meetsThreshold('warning', 'warning'));
@@ -56,13 +55,13 @@ class LogLevelTest extends TestCase
         $this->assertFalse(\Sentinel_Log_Level::meetsThreshold('warning', 'error'));
     }
 
-    /** @test */
+    #[Test]
     public function error_does_not_meet_critical(): void
     {
         $this->assertFalse(\Sentinel_Log_Level::meetsThreshold('error', 'critical'));
     }
 
-    /** @test */
+    #[Test]
     public function all_priority_levels_are_defined(): void
     {
         $levels = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
@@ -72,7 +71,7 @@ class LogLevelTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function priorities_are_ordered_emergency_lowest_debug_highest(): void
     {
         $this->assertLessThan(
@@ -85,7 +84,7 @@ class LogLevelTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function unknown_level_defaults_to_debug_priority(): void
     {
         // Unknown level should be treated as lowest priority (7 = debug)
@@ -93,7 +92,7 @@ class LogLevelTest extends TestCase
         $this->assertFalse(\Sentinel_Log_Level::meetsThreshold('unknown', 'info'));
     }
 
-    /** @test */
+    #[Test]
     public function unknown_threshold_defaults_to_debug(): void
     {
         // Unknown threshold = debug (7), so everything meets it

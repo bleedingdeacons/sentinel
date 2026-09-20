@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\LogViewerPage;
 use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
@@ -63,8 +64,7 @@ final class LogViewerPageTest extends AdminTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function init_and_register_page_run_without_error(): void
     {
         LogViewerPage::init();
@@ -73,7 +73,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertTrue(true, 'registration completed');
     }
 
-    /** @test */
+    #[Test]
     public function assets_load_only_on_the_log_viewer_screen(): void
     {
         LogViewerPage::enqueueAssets('some-other-page');
@@ -84,8 +84,7 @@ final class LogViewerPageTest extends AdminTestCase
     }
 
     // ── clear action guards ───────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function clear_action_ignores_requests_without_its_post_field(): void
     {
         $_POST = [];
@@ -95,7 +94,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertTrue(true, 'returned before touching the table');
     }
 
-    /** @test */
+    #[Test]
     public function clear_action_refuses_users_without_the_capability(): void
     {
         $this->denyCapability();
@@ -107,8 +106,7 @@ final class LogViewerPageTest extends AdminTestCase
     }
 
     // ── aggregate table rendering ─────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function aggregate_table_explains_itself_when_the_table_is_absent(): void
     {
         $html = $this->capture([LogViewerPage::class, 'renderAggregateTable']);
@@ -116,7 +114,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertNotSame('', trim($html), 'An empty state is still rendered.');
     }
 
-    /** @test */
+    #[Test]
     public function aggregate_table_handles_a_table_that_exists_but_is_empty(): void
     {
         global $wpdb;
@@ -128,7 +126,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertNotSame('', trim($html));
     }
 
-    /** @test */
+    #[Test]
     public function aggregate_table_lists_channel_level_and_latest_message(): void
     {
         $this->seedLogTable();
@@ -140,7 +138,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertStringContainsString('Something went wrong', $html);
     }
 
-    /** @test */
+    #[Test]
     public function aggregate_table_copes_when_the_group_query_returns_nothing(): void
     {
         global $wpdb;
@@ -156,8 +154,7 @@ final class LogViewerPageTest extends AdminTestCase
     }
 
     // ── page rendering ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function render_page_shows_the_empty_state_with_no_table(): void
     {
         $html = $this->capture([LogViewerPage::class, 'renderPage']);
@@ -165,7 +162,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertNotSame('', trim($html));
     }
 
-    /** @test */
+    #[Test]
     public function render_page_shows_aggregated_rows_when_the_table_has_data(): void
     {
         $this->seedLogTable();
@@ -176,7 +173,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertStringContainsString('Something went wrong', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_confirms_a_completed_clear(): void
     {
         $_GET = ['cleared' => '1'];
@@ -186,7 +183,7 @@ final class LogViewerPageTest extends AdminTestCase
         $this->assertStringContainsString('cleared', strtolower($html));
     }
 
-    /** @test */
+    #[Test]
     public function render_page_refuses_users_without_the_capability(): void
     {
         $this->denyCapability();
@@ -197,8 +194,7 @@ final class LogViewerPageTest extends AdminTestCase
     }
 
     // ── ajax ──────────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function ajax_refresh_returns_the_aggregate_table_html(): void
     {
         $this->seedLogTable();
@@ -212,7 +208,7 @@ final class LogViewerPageTest extends AdminTestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function ajax_refresh_is_refused_without_the_capability(): void
     {
         $this->denyCapability();

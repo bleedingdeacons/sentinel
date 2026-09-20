@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use ReflectionProperty;
 use Sentinel\Admin\UnityControlPage;
 use Sentinel\Tests\AdminTestCase;
@@ -13,9 +14,8 @@ use Sentinel\Tests\AdminTestCase;
  * writable (so the earlier guard passes) but the atomic writer's temp path is
  * occupied by a directory, so file_put_contents() fails and each action falls
  * into its failure branch — leaving wp-config.php untouched.
- *
- * @covers \Sentinel\Admin\UnityControlPage
  */
+#[CoversClass(\Sentinel\Admin\UnityControlPage::class)]
 final class UnityControlPageFailureTest extends AdminTestCase
 {
     private const KILL_MARKER = '/* Unity Kill Switch (managed by Sentinel) */';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Tests\AdminTestCase;
 
@@ -13,9 +14,8 @@ use Sentinel\Tests\AdminTestCase;
  * atomic writer's temp path is occupied by a directory, so every
  * setWpConfigConstant() write fails and handleLoggerConfigSave() reports the
  * write error.
- *
- * @covers \Sentinel\Admin\SettingsPage
  */
+#[CoversClass(\Sentinel\Admin\SettingsPage::class)]
 final class SettingsPageFailureTest extends AdminTestCase
 {
     private string $tmpDir = '';

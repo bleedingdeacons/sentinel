@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Admin\StatusDashboard;
 use Sentinel\Tests\AdminTestCase;
@@ -11,9 +15,8 @@ use Sentinel\Tests\AdminTestCase;
 /**
  * Covers the StatusDashboard's UNITY_KILL-engaged render branches, which need
  * the real constant defined and therefore run in an isolated process.
- *
- * @covers \Sentinel\Admin\StatusDashboard
  */
+#[CoversClass(\Sentinel\Admin\StatusDashboard::class)]
 final class StatusDashboardKilledTest extends AdminTestCase
 {
     private function monitor(string $mandatory, string $optional = ''): void
@@ -22,11 +25,9 @@ final class StatusDashboardKilledTest extends AdminTestCase
         $this->setOption(SettingsPage::OPTION_OPTIONAL_PLUGINS, $optional);
     }
 
-    /**
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_flags_the_kill_switch_and_stands_down_dependents(): void
     {
         define('UNITY_KILL', true);
@@ -51,11 +52,10 @@ final class StatusDashboardKilledTest extends AdminTestCase
      * Promises reads every one of its tools' data through Unity and boots from
      * `unity/loaded`, so a kill switch leaves it installed, active and unable
      * to answer a single request. It has to be stood down with the rest.
-     *
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
      */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_stands_promises_down_with_the_other_unity_dependents(): void
     {
         define('UNITY_KILL', true);
@@ -80,11 +80,10 @@ final class StatusDashboardKilledTest extends AdminTestCase
      * server half of Link, and the failure it would otherwise hide is the
      * quiet one — a phone that goes on polling and collects nothing,
      * reporting no error of its own.
-     *
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
      */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function render_stands_fellowship_down_with_the_other_unity_dependents(): void
     {
         define('UNITY_KILL', true);

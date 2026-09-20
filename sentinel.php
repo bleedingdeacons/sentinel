@@ -6,7 +6,7 @@
  * Version: 2.9.0
  * Build date: 2026/09/10 23:12:17
  * Requires at least: 6.0
- * Requires PHP: 8.1
+ * Requires PHP: 8.4
  * GitHub Plugin URI: https://github.com/bleedingdeacons/sentinel
  * GitHub Branch: main
  * Author: The Bleeding Deacons

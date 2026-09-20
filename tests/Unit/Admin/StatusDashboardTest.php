@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Admin\StatusDashboard;
 use Sentinel\Tests\AdminTestCase;
@@ -31,8 +32,7 @@ final class StatusDashboardTest extends AdminTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function init_registers_the_widget_hooks(): void
     {
         StatusDashboard::init();
@@ -40,7 +40,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertTrue(true, 'hooks registered');
     }
 
-    /** @test */
+    #[Test]
     public function assets_load_only_on_the_dashboard_screen(): void
     {
         StatusDashboard::enqueueAssets('edit.php');
@@ -49,7 +49,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertTrue(true, 'enqueue guarded by hook');
     }
 
-    /** @test */
+    #[Test]
     public function widget_is_registered_for_a_permitted_user(): void
     {
         StatusDashboard::register();
@@ -57,7 +57,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertTrue(true, 'widget registered');
     }
 
-    /** @test */
+    #[Test]
     public function widget_is_not_registered_without_the_capability(): void
     {
         $this->denyCapability();
@@ -68,8 +68,7 @@ final class StatusDashboardTest extends AdminTestCase
     }
 
     // ── rendering ─────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_installed_and_active_plugin_is_reported_with_its_version(): void
     {
         $this->makePlugin('unity/unity.php', '2026-07-23');
@@ -84,7 +83,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('2026-07-23', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_installed_but_inactive_plugin_is_distinguished_from_an_active_one(): void
     {
         $this->makePlugin('scrutiny/scrutiny.php', '2026-07-22');
@@ -96,7 +95,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('Scrutiny', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_mandatory_plugin_that_is_not_installed_is_still_listed(): void
     {
         // Nothing written to disk for this one.
@@ -111,7 +110,7 @@ final class StatusDashboardTest extends AdminTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function an_optional_plugin_is_hidden_when_not_installed(): void
     {
         $this->monitor('unity/unity.php|Unity', 'ghost/ghost.php|Ghost Plugin');
@@ -127,7 +126,7 @@ final class StatusDashboardTest extends AdminTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function an_optional_plugin_is_shown_once_installed(): void
     {
         $this->monitor('unity/unity.php|Unity', 'reach/reach.php|Reach');
@@ -140,7 +139,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('Reach', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_key_claimed_by_the_mandatory_list_is_not_duplicated_by_the_optional_one(): void
     {
         $this->monitor('unity/unity.php|Unity Mandatory', 'unity/unity.php|Unity Optional');
@@ -152,7 +151,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringNotContainsString('Unity Optional', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_plugin_without_a_readme_reports_no_build_date(): void
     {
         $this->makePlugin('nodate/nodate.php', null); // no readme written
@@ -163,7 +162,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('No Date', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_uppercase_readme_is_also_read_for_the_build_date(): void
     {
         $this->makePlugin('upper/upper.php', '2026-01-09', 'README.txt');
@@ -174,7 +173,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('2026-01-09', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_readme_without_a_build_date_line_is_tolerated(): void
     {
         $this->makePlugin('plain/plain.php', null);
@@ -186,7 +185,7 @@ final class StatusDashboardTest extends AdminTestCase
         $this->assertStringContainsString('Plain', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_copes_with_no_monitored_plugins_at_all(): void
     {
         $this->monitor('', '');
@@ -197,8 +196,7 @@ final class StatusDashboardTest extends AdminTestCase
     }
 
     // ── ajax ──────────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function ajax_refresh_returns_the_widget_html(): void
     {
         $this->makePlugin('unity/unity.php', '2026-07-23');
@@ -214,7 +212,7 @@ final class StatusDashboardTest extends AdminTestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function ajax_refresh_is_refused_without_the_capability(): void
     {
         $this->denyCapability();

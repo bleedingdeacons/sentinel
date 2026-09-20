@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\Test;
 use ReflectionProperty;
 use Sentinel\Admin\UnityControlPage;
 use Sentinel\Tests\AdminTestCase;
@@ -66,8 +67,7 @@ final class UnityControlPageTest extends AdminTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function init_and_register_page_run_without_error(): void
     {
         UnityControlPage::init();
@@ -77,8 +77,7 @@ final class UnityControlPageTest extends AdminTestCase
     }
 
     // ── save handler guards ───────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function save_handler_ignores_requests_without_its_nonce_field(): void
     {
         $_POST = ['sentinel_unity_action' => 'disable'];
@@ -88,7 +87,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertTrue(true, 'returned before touching wp-config.php');
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_refuses_users_without_the_capability(): void
     {
         $this->denyCapability();
@@ -99,7 +98,7 @@ final class UnityControlPageTest extends AdminTestCase
         UnityControlPage::handleSave();
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_ignores_an_unrecognised_action(): void
     {
         $this->writeWpConfig();
@@ -110,7 +109,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertSame($before, $this->readWpConfig(), 'Unknown actions are dropped.');
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_reports_an_unwritable_config(): void
     {
         $this->removeWpConfig();
@@ -125,8 +124,7 @@ final class UnityControlPageTest extends AdminTestCase
     }
 
     // ── kill switch ───────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function disabling_unity_requires_the_confirmation_checkbox(): void
     {
         $this->writeWpConfig();
@@ -140,7 +138,7 @@ final class UnityControlPageTest extends AdminTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function disabling_unity_writes_the_kill_switch_with_its_marker(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -153,7 +151,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
     }
 
-    /** @test */
+    #[Test]
     public function disabling_twice_replaces_rather_than_duplicates(): void
     {
         $this->writeWpConfig("<?php\n" . self::KILL_MARKER . "\ndefine( 'UNITY_KILL', false );\n");
@@ -166,7 +164,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertSame(1, substr_count($config, self::KILL_MARKER));
     }
 
-    /** @test */
+    #[Test]
     public function enabling_unity_removes_the_define_and_marker(): void
     {
         $this->writeWpConfig(
@@ -181,7 +179,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
     }
 
-    /** @test */
+    #[Test]
     public function enabling_unity_when_it_was_never_disabled_is_a_no_op(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -192,7 +190,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertSame($before, $this->readWpConfig());
     }
 
-    /** @test */
+    #[Test]
     public function the_kill_switch_is_written_even_without_a_php_opening_tag(): void
     {
         $this->writeWpConfig("no php tag\n");
@@ -204,7 +202,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("define( 'UNITY_KILL', true );", $config);
     }
 
-    /** @test */
+    #[Test]
     public function the_kill_switch_appends_when_the_config_is_a_single_line(): void
     {
         $this->writeWpConfig('<?php');
@@ -215,8 +213,7 @@ final class UnityControlPageTest extends AdminTestCase
     }
 
     // ── PRODUCTION flag ───────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function turning_production_off_writes_the_constant_false(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -228,7 +225,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("define( 'PRODUCTION', false );", $config);
     }
 
-    /** @test */
+    #[Test]
     public function turning_production_on_removes_the_constant_entirely(): void
     {
         // Production is the runtime default, so "on" means removing the
@@ -245,7 +242,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
     }
 
-    /** @test */
+    #[Test]
     public function turning_production_off_twice_replaces_rather_than_duplicates(): void
     {
         $this->writeWpConfig("<?php\n" . self::PROD_MARKER . "\ndefine( 'PRODUCTION', true );\n");
@@ -258,7 +255,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertSame(1, substr_count($config, self::PROD_MARKER));
     }
 
-    /** @test */
+    #[Test]
     public function turning_production_on_when_undefined_is_a_no_op(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -269,7 +266,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertSame($before, $this->readWpConfig());
     }
 
-    /** @test */
+    #[Test]
     public function production_is_written_even_without_a_php_opening_tag(): void
     {
         $this->writeWpConfig("no php tag\n");
@@ -280,7 +277,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString("define( 'PRODUCTION', false );", $this->readWpConfig());
     }
 
-    /** @test */
+    #[Test]
     public function production_appends_when_the_config_is_a_single_line(): void
     {
         $this->writeWpConfig('<?php');
@@ -291,8 +288,7 @@ final class UnityControlPageTest extends AdminTestCase
     }
 
     // ── rendering ─────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function render_page_shows_unity_running_when_no_kill_switch_is_set(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -305,7 +301,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString('Scrutiny', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_reflects_a_kill_switch_present_in_the_file(): void
     {
         $this->writeWpConfig(
@@ -318,7 +314,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertNotSame('', trim($html));
     }
 
-    /** @test */
+    #[Test]
     public function render_page_reflects_production_defined_in_the_file(): void
     {
         $this->writeWpConfig(
@@ -330,7 +326,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString('Unity Control', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_handles_a_missing_wp_config(): void
     {
         $this->removeWpConfig();
@@ -345,7 +341,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString('Unity Control', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_emits_the_reload_script_after_a_successful_change(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -356,7 +352,7 @@ final class UnityControlPageTest extends AdminTestCase
         $this->assertStringContainsString('Unity Control', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_refuses_users_without_the_capability(): void
     {
         $this->denyCapability();
