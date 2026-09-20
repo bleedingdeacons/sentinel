@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Logger\LoggerManager;
 use Sentinel\Tests\TestCase;
 
@@ -48,8 +49,7 @@ final class LoggerManagerDeploymentTest extends TestCase
     }
 
     // ── paths ─────────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function source_and_destination_paths_are_derived_from_the_plugin_constants(): void
     {
         $this->assertStringEndsWith('src/Logger/sentinel-logger.php', LoggerManager::sourcePath());
@@ -58,8 +58,7 @@ final class LoggerManagerDeploymentTest extends TestCase
     }
 
     // ── deployment ────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function deploy_copies_the_bundled_logger_into_mu_plugins(): void
     {
         $this->assertFalse(LoggerManager::isDeployed());
@@ -70,7 +69,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertFileEquals(LoggerManager::sourcePath(), LoggerManager::destinationPath());
     }
 
-    /** @test */
+    #[Test]
     public function a_freshly_deployed_copy_reports_as_current(): void
     {
         LoggerManager::deploy();
@@ -78,7 +77,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertTrue(LoggerManager::isCurrentVersion());
     }
 
-    /** @test */
+    #[Test]
     public function a_stale_copy_is_detected_and_replaced(): void
     {
         file_put_contents(LoggerManager::destinationPath(), "<?php // an old build\n");
@@ -91,7 +90,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertTrue(LoggerManager::isCurrentVersion(), 'deploy() refreshes a stale copy.');
     }
 
-    /** @test */
+    #[Test]
     public function deploying_an_identical_copy_leaves_the_file_untouched(): void
     {
         LoggerManager::deploy();
@@ -105,7 +104,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertSame($firstMtime, filemtime(LoggerManager::destinationPath()));
     }
 
-    /** @test */
+    #[Test]
     public function force_redeploys_even_when_the_copy_is_identical(): void
     {
         LoggerManager::deploy();
@@ -115,15 +114,14 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertTrue(LoggerManager::isCurrentVersion());
     }
 
-    /** @test */
+    #[Test]
     public function is_current_version_is_false_when_nothing_is_deployed(): void
     {
         $this->assertFalse(LoggerManager::isCurrentVersion());
     }
 
     // ── legacy cleanup ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function deploy_removes_legacy_named_copies(): void
     {
         // An older release deployed under a different filename; leaving it
@@ -137,7 +135,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertTrue(LoggerManager::isDeployed());
     }
 
-    /** @test */
+    #[Test]
     public function remove_legacy_is_safe_when_there_is_nothing_to_remove(): void
     {
         LoggerManager::removeLegacy();
@@ -146,8 +144,7 @@ final class LoggerManagerDeploymentTest extends TestCase
     }
 
     // ── removal ───────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function remove_deletes_the_deployed_logger(): void
     {
         LoggerManager::deploy();
@@ -158,7 +155,7 @@ final class LoggerManagerDeploymentTest extends TestCase
         $this->assertFalse(LoggerManager::isDeployed());
     }
 
-    /** @test */
+    #[Test]
     public function remove_is_safe_when_nothing_is_deployed(): void
     {
         LoggerManager::remove();
@@ -167,8 +164,7 @@ final class LoggerManagerDeploymentTest extends TestCase
     }
 
     // ── log data cleanup ──────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function clean_logs_drops_the_table_through_the_logger(): void
     {
         global $wpdb;

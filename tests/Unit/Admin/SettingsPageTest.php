@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
@@ -24,8 +25,7 @@ use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 final class SettingsPageTest extends AdminTestCase
 {
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function init_and_registration_hooks_run_without_error(): void
     {
         SettingsPage::init();
@@ -35,7 +35,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertTrue(true, 'registration completed');
     }
 
-    /** @test */
+    #[Test]
     public function enqueue_assets_only_loads_on_its_own_screen(): void
     {
         // registerPage() records the hook suffix returned by
@@ -49,8 +49,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── sanitizePluginList ────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function sanitize_plugin_list_returns_empty_string_for_non_string(): void
     {
         $this->assertSame('', SettingsPage::sanitizePluginList(null));
@@ -58,7 +57,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame('', SettingsPage::sanitizePluginList(42));
     }
 
-    /** @test */
+    #[Test]
     public function sanitize_plugin_list_drops_blank_and_comment_lines(): void
     {
         $input = "unity/unity.php|Unity\r\n\r\n# a comment\n   \nreach/reach.php|Reach\r";
@@ -71,8 +70,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── plugin list parsing ───────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function mandatory_plugins_fall_back_to_the_shipped_default_list(): void
     {
         $plugins = SettingsPage::getMandatoryPlugins();
@@ -83,7 +81,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertArrayHasKey('scrutiny', $plugins);
     }
 
-    /** @test */
+    #[Test]
     public function optional_plugins_fall_back_to_the_shipped_default_list(): void
     {
         $plugins = SettingsPage::getOptionalPlugins();
@@ -96,9 +94,8 @@ final class SettingsPageTest extends AdminTestCase
      * Promises is optional rather than mandatory: it is an MCP server, present
      * on the sites that connect a client and absent everywhere else, so a site
      * without it is not a site with something missing.
-     *
-     * @test
      */
+    #[Test]
     public function promises_is_monitored_as_an_optional_plugin(): void
     {
         $plugins = SettingsPage::getOptionalPlugins();
@@ -123,9 +120,8 @@ final class SettingsPageTest extends AdminTestCase
      * The cost is the ordinary cost of mandatory: a site that has never
      * installed Fellowship now reports it missing. Move it to the optional
      * list if that is ever the wrong trade.
-     *
-     * @test
      */
+    #[Test]
     public function fellowship_is_monitored_as_a_mandatory_plugin(): void
     {
         $plugins = SettingsPage::getMandatoryPlugins();
@@ -137,7 +133,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertArrayNotHasKey('fellowship', SettingsPage::getOptionalPlugins());
     }
 
-    /** @test */
+    #[Test]
     public function parser_derives_a_humanised_label_when_none_is_given(): void
     {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, "my-great_plugin/file.php");
@@ -147,7 +143,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame('My Great Plugin', $plugins['my-great_plugin']['label']);
     }
 
-    /** @test */
+    #[Test]
     public function parser_keeps_the_first_of_a_duplicated_key(): void
     {
         $this->setOption(
@@ -161,7 +157,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame('First', $plugins['unity']['label']);
     }
 
-    /** @test */
+    #[Test]
     public function parser_handles_an_entry_with_no_directory_segment(): void
     {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, "single.php|Single");
@@ -173,7 +169,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame('single.php', reset($plugins)['file']);
     }
 
-    /** @test */
+    #[Test]
     public function parser_skips_lines_with_an_empty_file_or_key(): void
     {
         // "|Label" has no file; "###" sanitises to an empty key.
@@ -185,7 +181,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertArrayNotHasKey('', $plugins);
     }
 
-    /** @test */
+    #[Test]
     public function parser_returns_empty_array_for_empty_option(): void
     {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, '');
@@ -194,8 +190,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── drop-table option ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function should_drop_table_is_false_unless_explicitly_opted_in(): void
     {
         $this->assertFalse(SettingsPage::shouldDropTable());
@@ -208,8 +203,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── field renderers ───────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function section_descriptions_render(): void
     {
         $monitored = $this->capture([SettingsPage::class, 'renderMonitoredPluginsSectionDescription']);
@@ -219,7 +213,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString('class="description"', $uninstall);
     }
 
-    /** @test */
+    #[Test]
     public function plugin_list_fields_render_the_stored_value(): void
     {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, 'stored/mandatory.php|M');
@@ -233,7 +227,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString('stored/optional.php|O', $optional);
     }
 
-    /** @test */
+    #[Test]
     public function drop_table_field_renders_a_checkbox(): void
     {
         $html = $this->capture([SettingsPage::class, 'renderDropTableField']);
@@ -243,8 +237,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── wp-config.php location ────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function wp_config_path_finds_the_file_in_abspath(): void
     {
         $path = $this->writeWpConfig();
@@ -253,7 +246,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertTrue(SettingsPage::isWpConfigWritable());
     }
 
-    /** @test */
+    #[Test]
     public function wp_config_path_is_null_when_no_file_exists(): void
     {
         $this->removeWpConfig();
@@ -269,8 +262,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── wp-config.php constant writing ────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function setting_a_constant_inserts_the_marker_and_define(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -284,7 +276,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
     }
 
-    /** @test */
+    #[Test]
     public function setting_an_existing_constant_replaces_it_in_place(): void
     {
         $this->writeWpConfig("<?php\ndefine( 'SENTINEL_LOG_LEVEL', 'debug' );\n");
@@ -298,7 +290,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame(1, substr_count($config, 'SENTINEL_LOG_LEVEL'));
     }
 
-    /** @test */
+    #[Test]
     public function setting_a_constant_appends_below_an_existing_marker(): void
     {
         $this->writeWpConfig("<?php\n/* Sentinel Logger Configuration */\ndefine( 'SENTINEL_LOG_LEVEL', 'debug' );\n");
@@ -311,7 +303,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame(1, substr_count($config, '/* Sentinel Logger Configuration */'));
     }
 
-    /** @test */
+    #[Test]
     public function values_are_formatted_by_php_type(): void
     {
         $this->writeWpConfig();
@@ -329,7 +321,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString("it\\'s odd", $config);
     }
 
-    /** @test */
+    #[Test]
     public function setting_a_constant_fails_when_there_is_no_wp_config(): void
     {
         $this->removeWpConfig();
@@ -342,7 +334,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertFalse(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'));
     }
 
-    /** @test */
+    #[Test]
     public function a_config_without_an_opening_tag_still_gets_the_block(): void
     {
         $this->writeWpConfig("no php tag here\n");
@@ -354,7 +346,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'notice' );", $config);
     }
 
-    /** @test */
+    #[Test]
     public function a_single_line_config_appends_the_block_at_the_end(): void
     {
         // No newline after the opening tag, so there is no end-of-line to
@@ -367,8 +359,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── wp-config.php constant removal ────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function removing_a_constant_deletes_the_line_and_the_orphaned_marker(): void
     {
         $this->writeWpConfig(
@@ -384,7 +375,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
     }
 
-    /** @test */
+    #[Test]
     public function removing_a_constant_keeps_the_marker_while_others_remain(): void
     {
         $this->writeWpConfig(
@@ -401,7 +392,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString('/* Sentinel Logger Configuration */', $config);
     }
 
-    /** @test */
+    #[Test]
     public function removing_an_absent_constant_is_a_successful_no_op(): void
     {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
@@ -411,7 +402,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertSame($before, $this->readWpConfig(), 'File untouched when nothing matched.');
     }
 
-    /** @test */
+    #[Test]
     public function remove_all_clears_every_sentinel_constant(): void
     {
         $this->writeWpConfig(
@@ -432,8 +423,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── logger config save handler ────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function save_handler_ignores_requests_without_its_nonce_field(): void
     {
         $_POST = [];
@@ -443,7 +433,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertTrue(true, 'returned early without touching wp-config.php');
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_writes_every_constant(): void
     {
         $this->writeWpConfig();
@@ -468,7 +458,7 @@ final class SettingsPageTest extends AdminTestCase
         $_POST = [];
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_rejects_an_unknown_level_and_clamps_numbers(): void
     {
         $this->writeWpConfig();
@@ -492,7 +482,7 @@ final class SettingsPageTest extends AdminTestCase
         $_POST = [];
     }
 
-    /** @test */
+    #[Test]
     public function save_handler_reports_when_wp_config_is_missing(): void
     {
         $this->removeWpConfig();
@@ -511,8 +501,7 @@ final class SettingsPageTest extends AdminTestCase
     }
 
     // ── page rendering ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function render_page_outputs_the_settings_screen(): void
     {
         $this->writeWpConfig();
@@ -527,7 +516,7 @@ final class SettingsPageTest extends AdminTestCase
         $this->assertStringContainsString('SENTINEL_CAPTURE_ERRORS', $html);
     }
 
-    /** @test */
+    #[Test]
     public function render_page_refuses_users_without_the_capability(): void
     {
         $this->denyCapability();

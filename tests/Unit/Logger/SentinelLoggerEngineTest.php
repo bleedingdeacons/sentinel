@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use BleedingDeacons\WpMocks\WpState;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -13,11 +14,10 @@ use Sentinel\Tests\TestCase;
  * Exercises the Sentinel_Logger engine — buffered dispatch/flush, table
  * management, config resolution and request-type detection — against the
  * bootstrap's $wpdb stand-in, complementing SentinelLoggerTest (pure logic).
- *
- * @covers \Sentinel_Logger
- * @covers \Sentinel_Log_Channel
- * @covers \Sentinel_Log_Level
  */
+#[CoversClass(\Sentinel_Logger::class)]
+#[CoversClass(\Sentinel_Log_Channel::class)]
+#[CoversClass(\Sentinel_Log_Level::class)]
 class SentinelLoggerEngineTest extends TestCase
 {
     protected function setUp(): void

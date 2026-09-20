@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Tests\TestCase;
-use Mockery;
 
 /**
  * Tests for Sentinel_Logger internal logic.
@@ -31,8 +31,7 @@ class SentinelLoggerTest extends TestCase
     }
 
     // ── Interpolation ───────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function interpolate_replaces_placeholders_with_context_values(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -43,7 +42,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('User Alice logged in from 192.168.1.1', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_leaves_unknown_placeholders_intact(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -54,7 +53,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('Hello Bob, your id is {id}', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_ignores_underscore_prefixed_keys(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -65,7 +64,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('Channel is {_channel}', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_handles_numeric_values(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -76,7 +75,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('Count: 42, rate: 3.14', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_skips_non_scalar_values(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -87,7 +86,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('Data: {arr}, obj: {obj}', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_handles_stringable_objects(): void
     {
         $stringable = new class implements \Stringable {
@@ -105,7 +104,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('Value: stringified', $result);
     }
 
-    /** @test */
+    #[Test]
     public function interpolate_with_empty_context(): void
     {
         $result = $this->callPrivate('interpolate', [
@@ -117,8 +116,7 @@ class SentinelLoggerTest extends TestCase
     }
 
     // ── Redaction ───────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function redact_masks_password_key(): void
     {
         $result = $this->callPrivate('redact', [
@@ -129,7 +127,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('alice', $result['username']);
     }
 
-    /** @test */
+    #[Test]
     public function redact_masks_all_sensitive_keys(): void
     {
         $sensitiveKeys = [
@@ -151,7 +149,7 @@ class SentinelLoggerTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function redact_is_case_insensitive(): void
     {
         $result = $this->callPrivate('redact', [
@@ -162,7 +160,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('*** REDACTED ***', $result['Api_Key']);
     }
 
-    /** @test */
+    #[Test]
     public function redact_handles_nested_arrays(): void
     {
         $result = $this->callPrivate('redact', [
@@ -178,7 +176,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame('example.com', $result['config']['host']);
     }
 
-    /** @test */
+    #[Test]
     public function redact_preserves_non_sensitive_keys(): void
     {
         $result = $this->callPrivate('redact', [
@@ -190,7 +188,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame(5, $result['count']);
     }
 
-    /** @test */
+    #[Test]
     public function redact_handles_empty_context(): void
     {
         $result = $this->callPrivate('redact', [[]]);
@@ -199,8 +197,7 @@ class SentinelLoggerTest extends TestCase
     }
 
     // ── Channel ─────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function channel_returns_a_log_channel(): void
     {
         $channel = \Sentinel_Logger::channel('test-plugin');
@@ -208,7 +205,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertInstanceOf(\Sentinel_Log_Channel::class, $channel);
     }
 
-    /** @test */
+    #[Test]
     public function channel_returns_same_instance_for_same_name(): void
     {
         $a = \Sentinel_Logger::channel('my-plugin');
@@ -217,7 +214,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertSame($a, $b);
     }
 
-    /** @test */
+    #[Test]
     public function channel_returns_different_instances_for_different_names(): void
     {
         $a = \Sentinel_Logger::channel('plugin-a');
@@ -226,7 +223,7 @@ class SentinelLoggerTest extends TestCase
         $this->assertNotSame($a, $b);
     }
 
-    /** @test */
+    #[Test]
     public function channel_getChannel_returns_sanitized_name(): void
     {
         $channel = \Sentinel_Logger::channel('My-Plugin_Test');
@@ -237,8 +234,7 @@ class SentinelLoggerTest extends TestCase
     }
 
     // ── Buffer count ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function bufferCount_returns_integer(): void
     {
         $count = \Sentinel_Logger::instance()->bufferCount();

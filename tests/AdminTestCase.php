@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests;
 
+use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\WpState;
-use Brain\Monkey\Functions;
 use Sentinel\Plugin;
 
 /**
@@ -192,16 +192,16 @@ abstract class AdminTestCase extends TestCase
             'settings_fields', 'submit_button',
             ] as $fn
         ) {
-            Functions\when($fn)->justReturn(null);
+            when($fn)->justReturn(null);
         }
 
         // Routed through properties so a test can mark specific plugin files
         // active, or change the reported version, mid-test. Functions\when()
         // sets no call-count expectation, which is what a blanket base-class
         // stub wants; Functions\expect() would demand at least one call.
-        Functions\when('is_plugin_active')
+        when('is_plugin_active')
             ->alias(fn (string $file = ''): bool => in_array($file, $this->activePlugins, true));
-        Functions\when('get_plugin_data')
+        when('get_plugin_data')
             ->alias(fn (): array => ['Name' => 'Stub Plugin', 'Version' => $this->pluginVersion]);
     }
 }

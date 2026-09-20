@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Logger\HasLogger;
 use Sentinel\Tests\TestCase;
 
@@ -25,7 +26,7 @@ final class HasLoggerTest extends TestCase
         HasLoggerCustomChannel::resetChannel();
     }
 
-    /** @test */
+    #[Test]
     public function channel_name_defaults_to_the_short_class_name(): void
     {
         // sanitize_key() is stubbed in TestCase to mirror the real
@@ -33,13 +34,13 @@ final class HasLoggerTest extends TestCase
         $this->assertSame('hasloggerdefaultchannel', HasLoggerDefaultChannel::channel());
     }
 
-    /** @test */
+    #[Test]
     public function channel_name_can_be_overridden_by_the_consuming_class(): void
     {
         $this->assertSame('custom-channel', HasLoggerCustomChannel::channel());
     }
 
-    /** @test */
+    #[Test]
     public function log_resolves_a_channel_named_after_the_consuming_class(): void
     {
         $channel = HasLoggerCustomChannel::log();
@@ -48,7 +49,7 @@ final class HasLoggerTest extends TestCase
         $this->assertSame('custom-channel', $channel->getChannel());
     }
 
-    /** @test */
+    #[Test]
     public function the_resolved_channel_is_cached(): void
     {
         $first  = HasLoggerCustomChannel::log();
@@ -57,7 +58,7 @@ final class HasLoggerTest extends TestCase
         $this->assertSame($first, $second, 'The channel is resolved once and reused.');
     }
 
-    /** @test */
+    #[Test]
     public function two_consumers_get_their_own_channels(): void
     {
         $custom  = HasLoggerCustomChannel::log();
@@ -67,7 +68,7 @@ final class HasLoggerTest extends TestCase
         $this->assertSame('hasloggerdefaultchannel', $default->getChannel());
     }
 
-    /** @test */
+    #[Test]
     public function every_shorthand_buffers_an_entry(): void
     {
         $logger = \Sentinel_Logger::instance();
@@ -89,7 +90,7 @@ final class HasLoggerTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function shorthands_are_safe_to_call_before_the_channel_is_resolved(): void
     {
         // Nothing has called log() yet on this consumer; the shorthand must
