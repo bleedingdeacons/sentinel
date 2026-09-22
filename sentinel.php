@@ -3,8 +3,8 @@
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status.
- * Version: 3.0.2
- * Build date: 2026/09/22 18:16:12
+ * Version: 3.0.3
+ * Build date: 2026/09/22 23:57:30
  * Requires at least: 6.0
  * Requires PHP: 8.4
  * GitHub Plugin URI: https://github.com/bleedingdeacons/sentinel
