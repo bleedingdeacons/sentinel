@@ -56,8 +56,6 @@ class StatusDashboard
         'promises',
         'reach',
         'fellowship',
-        'stalwart',
-        'steward',
         'trusted',
         'trumpet',
     ];
@@ -332,7 +330,7 @@ class StatusDashboard
                     <?php
                     printf(
                         esc_html__(
-                            '%1$s is defined as %2$s in %3$s, which prevents Unity from booting. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Stalwart, Steward, Trusted, Trumpet) will not function until this is cleared.',
+                            '%1$s is defined as %2$s in %3$s, which prevents Unity from booting. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Trusted, Trumpet) will not function until this is cleared.',
                             'sentinel'
                         ),
                         '<code>UNITY_KILL</code>',

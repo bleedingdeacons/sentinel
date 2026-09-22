@@ -96,8 +96,6 @@ class UnityControlPage
         'Integrity',
         'Reconcile',
         'Reach',
-        'Stalwart',
-        'Steward',
         'Trusted',
         'Trumpet',
     ];
@@ -188,7 +186,7 @@ class UnityControlPage
                 add_settings_error(
                     'sentinel_unity_control',
                     'kill_switch_enabled',
-                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Stalwart, Steward, Trusted, Trumpet) will stand down.', 'sentinel'),
+                    __('Unity has been disabled. The change takes effect on the next page load. Dependent plugins (TSML for Unity, Scrutiny, Amber, Integrity, Reconcile, Reach, Trusted, Trumpet) will stand down.', 'sentinel'),
                     'updated'
                 );
             } else {
