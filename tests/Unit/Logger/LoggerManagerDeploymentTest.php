@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Logger\LoggerManager;
-use Sentinel\Tests\TestCase;
 
-/**
+/*
  * Tests for LoggerManager's deployment lifecycle.
  *
  * The logger ships inside Sentinel but has to run as an mu-plugin, so this
@@ -18,81 +16,67 @@ use Sentinel\Tests\TestCase;
  * "Cannot redeclare" fatal — so these tests run against a real temp
  * WPMU_PLUGIN_DIR rather than mocking the file operations away.
  */
-final class LoggerManagerDeploymentTest extends TestCase
+
+function clearMuPluginDir(): void
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        // wp_mkdir_p() and delete_option() are real stubs in wp-mocks — the
-        // first creating the directory for real, which is what these
-        // filesystem-shaped tests want anyway.
-        if (!is_dir(WPMU_PLUGIN_DIR)) {
-            mkdir(WPMU_PLUGIN_DIR, 0777, true);
-        }
-        $this->clearMuPluginDir();
-    }
-
-    protected function tearDown(): void
-    {
-        $this->clearMuPluginDir();
-        parent::tearDown();
-    }
-
-    private function clearMuPluginDir(): void
-    {
-        foreach ((array) glob(WPMU_PLUGIN_DIR . '/*') as $file) {
-            if (is_file($file)) {
-                @unlink($file);
-            }
+    foreach ((array) glob(WPMU_PLUGIN_DIR . '/*') as $file) {
+        if (is_file($file)) {
+            @unlink($file);
         }
     }
+}
 
-    // ── paths ─────────────────────────────────────────────────────────
-    #[Test]
-    public function source_and_destination_paths_are_derived_from_the_plugin_constants(): void
-    {
-        $this->assertStringEndsWith('src/Logger/sentinel-logger.php', LoggerManager::sourcePath());
-        $this->assertStringStartsWith(WPMU_PLUGIN_DIR, LoggerManager::destinationPath());
-        $this->assertFileExists(LoggerManager::sourcePath(), 'The bundled logger must ship with the plugin.');
+beforeEach(function () {
+    // wp_mkdir_p() and delete_option() are real stubs in wp-mocks — the
+    // first creating the directory for real, which is what these
+    // filesystem-shaped tests want anyway.
+    if (!is_dir(WPMU_PLUGIN_DIR)) {
+        mkdir(WPMU_PLUGIN_DIR, 0777, true);
     }
+    clearMuPluginDir();
+});
 
-    // ── deployment ────────────────────────────────────────────────────
-    #[Test]
-    public function deploy_copies_the_bundled_logger_into_mu_plugins(): void
-    {
-        $this->assertFalse(LoggerManager::isDeployed());
+afterEach(function () {
+    clearMuPluginDir();
+});
+
+// ── paths ─────────────────────────────────────────────────────────
+it('derives the source and destination paths from the plugin constants', function () {
+    expect(LoggerManager::sourcePath())->toEndWith('src/Logger/sentinel-logger.php')
+        ->and(LoggerManager::destinationPath())->toStartWith(WPMU_PLUGIN_DIR)
+        ->and(LoggerManager::sourcePath())->toBeFile('The bundled logger must ship with the plugin.');
+});
+
+// ── deployment ────────────────────────────────────────────────────
+describe('deploy', function () {
+    it('copies the bundled logger into mu-plugins', function () {
+        expect(LoggerManager::isDeployed())->toBeFalse();
 
         LoggerManager::deploy();
 
-        $this->assertTrue(LoggerManager::isDeployed());
-        $this->assertFileEquals(LoggerManager::sourcePath(), LoggerManager::destinationPath());
-    }
+        expect(LoggerManager::isDeployed())->toBeTrue()
+            ->and(file_get_contents(LoggerManager::destinationPath()))
+            ->toBe(file_get_contents(LoggerManager::sourcePath()));
+    });
 
-    #[Test]
-    public function a_freshly_deployed_copy_reports_as_current(): void
-    {
+    it('reports a freshly deployed copy as current', function () {
         LoggerManager::deploy();
 
-        $this->assertTrue(LoggerManager::isCurrentVersion());
-    }
+        expect(LoggerManager::isCurrentVersion())->toBeTrue();
+    });
 
-    #[Test]
-    public function a_stale_copy_is_detected_and_replaced(): void
-    {
+    it('detects and replaces a stale copy', function () {
         file_put_contents(LoggerManager::destinationPath(), "<?php // an old build\n");
 
-        $this->assertTrue(LoggerManager::isDeployed());
-        $this->assertFalse(LoggerManager::isCurrentVersion(), 'A differing copy is not current.');
+        expect(LoggerManager::isDeployed())->toBeTrue()
+            ->and(LoggerManager::isCurrentVersion())->toBeFalse('A differing copy is not current.');
 
         LoggerManager::deploy();
 
-        $this->assertTrue(LoggerManager::isCurrentVersion(), 'deploy() refreshes a stale copy.');
-    }
+        expect(LoggerManager::isCurrentVersion())->toBeTrue('deploy() refreshes a stale copy.');
+    });
 
-    #[Test]
-    public function deploying_an_identical_copy_leaves_the_file_untouched(): void
-    {
+    it('leaves the file untouched when deploying an identical copy', function () {
         LoggerManager::deploy();
         $firstMtime = filemtime(LoggerManager::destinationPath());
 
@@ -101,29 +85,25 @@ final class LoggerManagerDeploymentTest extends TestCase
         clearstatcache();
         LoggerManager::deploy();
 
-        $this->assertSame($firstMtime, filemtime(LoggerManager::destinationPath()));
-    }
+        expect(filemtime(LoggerManager::destinationPath()))->toBe($firstMtime);
+    });
 
-    #[Test]
-    public function force_redeploys_even_when_the_copy_is_identical(): void
-    {
+    it('redeploys when forced even when the copy is identical', function () {
         LoggerManager::deploy();
 
         LoggerManager::deploy(true);
 
-        $this->assertTrue(LoggerManager::isCurrentVersion());
-    }
+        expect(LoggerManager::isCurrentVersion())->toBeTrue();
+    });
 
-    #[Test]
-    public function is_current_version_is_false_when_nothing_is_deployed(): void
-    {
-        $this->assertFalse(LoggerManager::isCurrentVersion());
-    }
+    it('reports isCurrentVersion false when nothing is deployed', function () {
+        expect(LoggerManager::isCurrentVersion())->toBeFalse();
+    });
+});
 
-    // ── legacy cleanup ────────────────────────────────────────────────
-    #[Test]
-    public function deploy_removes_legacy_named_copies(): void
-    {
+// ── legacy cleanup ────────────────────────────────────────────────
+describe('legacy cleanup', function () {
+    it('removes legacy-named copies on deploy', function () {
         // An older release deployed under a different filename; leaving it
         // in place would redeclare the logger class and fatal the site.
         $legacy = WPMU_PLUGIN_DIR . '/bd-shared-logger.php';
@@ -131,48 +111,41 @@ final class LoggerManagerDeploymentTest extends TestCase
 
         LoggerManager::deploy();
 
-        $this->assertFileDoesNotExist($legacy);
-        $this->assertTrue(LoggerManager::isDeployed());
-    }
+        expect($legacy)->not->toBeFile()
+            ->and(LoggerManager::isDeployed())->toBeTrue();
+    });
 
-    #[Test]
-    public function remove_legacy_is_safe_when_there_is_nothing_to_remove(): void
-    {
+    // no legacy files, no error
+    it('is safe to run removeLegacy when there is nothing to remove', function () {
         LoggerManager::removeLegacy();
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'no legacy files, no error');
-    }
-
-    // ── removal ───────────────────────────────────────────────────────
-    #[Test]
-    public function remove_deletes_the_deployed_logger(): void
-    {
+// ── removal ───────────────────────────────────────────────────────
+describe('remove', function () {
+    it('deletes the deployed logger', function () {
         LoggerManager::deploy();
-        $this->assertTrue(LoggerManager::isDeployed());
+        expect(LoggerManager::isDeployed())->toBeTrue();
 
         LoggerManager::remove();
 
-        $this->assertFalse(LoggerManager::isDeployed());
-    }
+        expect(LoggerManager::isDeployed())->toBeFalse();
+    });
 
-    #[Test]
-    public function remove_is_safe_when_nothing_is_deployed(): void
-    {
+    it('is safe when nothing is deployed', function () {
         LoggerManager::remove();
 
-        $this->assertFalse(LoggerManager::isDeployed());
-    }
+        expect(LoggerManager::isDeployed())->toBeFalse();
+    });
+});
 
-    // ── log data cleanup ──────────────────────────────────────────────
-    #[Test]
-    public function clean_logs_drops_the_table_through_the_logger(): void
-    {
-        global $wpdb;
-        $before = count($wpdb->queries);
+// ── log data cleanup ──────────────────────────────────────────────
+it('drops the table through the logger when cleaning logs', function () {
+    global $wpdb;
+    $before = count($wpdb->queries);
 
-        LoggerManager::cleanLogs();
+    LoggerManager::cleanLogs();
 
-        $this->assertGreaterThan($before, count($wpdb->queries), 'A DROP TABLE was issued.');
-        $this->assertStringContainsString('DROP TABLE', end($wpdb->queries));
-    }
-}
+    expect(count($wpdb->queries))->toBeGreaterThan($before, 'A DROP TABLE was issued.')
+        ->and(end($wpdb->queries))->toContain('DROP TABLE');
+});

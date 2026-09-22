@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Logger\HasLogger;
-use Sentinel\Tests\TestCase;
 
-/**
+/*
  * Tests for the HasLogger convenience trait.
  *
  * wp_log() is a real function defined by sentinel-logger.php rather than a
@@ -17,91 +15,70 @@ use Sentinel\Tests\TestCase;
  * useful test anyway — it proves the trait is wired to the logger the
  * plugin actually ships, not to a mock that agrees with it.
  */
-final class HasLoggerTest extends TestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
-        HasLoggerDefaultChannel::resetChannel();
-        HasLoggerCustomChannel::resetChannel();
-    }
 
-    #[Test]
-    public function channel_name_defaults_to_the_short_class_name(): void
-    {
-        // sanitize_key() is stubbed in TestCase to mirror the real
-        // lowercasing, so the derived channel is the class's short name.
-        $this->assertSame('hasloggerdefaultchannel', HasLoggerDefaultChannel::channel());
-    }
+beforeEach(function () {
+    HasLoggerDefaultChannel::resetChannel();
+    HasLoggerCustomChannel::resetChannel();
+});
 
-    #[Test]
-    public function channel_name_can_be_overridden_by_the_consuming_class(): void
-    {
-        $this->assertSame('custom-channel', HasLoggerCustomChannel::channel());
-    }
+it('defaults the channel name to the short class name', function () {
+    // sanitize_key() is stubbed in TestCase to mirror the real
+    // lowercasing, so the derived channel is the class's short name.
+    expect(HasLoggerDefaultChannel::channel())->toBe('hasloggerdefaultchannel');
+});
 
-    #[Test]
-    public function log_resolves_a_channel_named_after_the_consuming_class(): void
-    {
-        $channel = HasLoggerCustomChannel::log();
+it('lets the consuming class override the channel name', function () {
+    expect(HasLoggerCustomChannel::channel())->toBe('custom-channel');
+});
 
-        $this->assertInstanceOf(\Sentinel_Log_Channel::class, $channel);
-        $this->assertSame('custom-channel', $channel->getChannel());
-    }
+it('resolves a channel named after the consuming class', function () {
+    $channel = HasLoggerCustomChannel::log();
 
-    #[Test]
-    public function the_resolved_channel_is_cached(): void
-    {
-        $first  = HasLoggerCustomChannel::log();
-        $second = HasLoggerCustomChannel::log();
+    expect($channel)->toBeInstanceOf(\Sentinel_Log_Channel::class)
+        ->and($channel->getChannel())->toBe('custom-channel');
+});
 
-        $this->assertSame($first, $second, 'The channel is resolved once and reused.');
-    }
+it('caches the resolved channel', function () {
+    $first  = HasLoggerCustomChannel::log();
+    $second = HasLoggerCustomChannel::log();
 
-    #[Test]
-    public function two_consumers_get_their_own_channels(): void
-    {
-        $custom  = HasLoggerCustomChannel::log();
-        $default = HasLoggerDefaultChannel::log();
+    expect($second)->toBe($first, 'The channel is resolved once and reused.');
+});
 
-        $this->assertSame('custom-channel', $custom->getChannel());
-        $this->assertSame('hasloggerdefaultchannel', $default->getChannel());
-    }
+it('gives two consumers their own channels', function () {
+    $custom  = HasLoggerCustomChannel::log();
+    $default = HasLoggerDefaultChannel::log();
 
-    #[Test]
-    public function every_shorthand_buffers_an_entry(): void
-    {
-        $logger = \Sentinel_Logger::instance();
-        $before = $logger->bufferCount();
+    expect($custom->getChannel())->toBe('custom-channel')
+        ->and($default->getChannel())->toBe('hasloggerdefaultchannel');
+});
 
-        HasLoggerCustomChannel::logEmergency('msg', ['k' => 'v']);
-        HasLoggerCustomChannel::logAlert('msg');
-        HasLoggerCustomChannel::logCritical('msg');
-        HasLoggerCustomChannel::logError('msg');
-        HasLoggerCustomChannel::logWarning('msg');
-        HasLoggerCustomChannel::logNotice('msg');
-        HasLoggerCustomChannel::logInfo('msg');
-        HasLoggerCustomChannel::logDebug('msg');
+it('buffers an entry for every shorthand', function () {
+    $logger = \Sentinel_Logger::instance();
+    $before = $logger->bufferCount();
 
-        $this->assertSame(
-            $before + 8,
-            \Sentinel_Logger::instance()->bufferCount(),
-            'Each shorthand should reach the logger exactly once.'
-        );
-    }
+    HasLoggerCustomChannel::logEmergency('msg', ['k' => 'v']);
+    HasLoggerCustomChannel::logAlert('msg');
+    HasLoggerCustomChannel::logCritical('msg');
+    HasLoggerCustomChannel::logError('msg');
+    HasLoggerCustomChannel::logWarning('msg');
+    HasLoggerCustomChannel::logNotice('msg');
+    HasLoggerCustomChannel::logInfo('msg');
+    HasLoggerCustomChannel::logDebug('msg');
 
-    #[Test]
-    public function shorthands_are_safe_to_call_before_the_channel_is_resolved(): void
-    {
-        // Nothing has called log() yet on this consumer; the shorthand must
-        // resolve the channel itself rather than dereferencing null.
-        HasLoggerDefaultChannel::resetChannel();
+    expect(\Sentinel_Logger::instance()->bufferCount())
+        ->toBe($before + 8, 'Each shorthand should reach the logger exactly once.');
+});
 
-        HasLoggerDefaultChannel::logError('resolves lazily');
+it('makes the shorthands safe to call before the channel is resolved', function () {
+    // Nothing has called log() yet on this consumer; the shorthand must
+    // resolve the channel itself rather than dereferencing null.
+    HasLoggerDefaultChannel::resetChannel();
 
-        $this->assertInstanceOf(\Sentinel_Log_Channel::class, HasLoggerDefaultChannel::log());
-    }
-}
+    HasLoggerDefaultChannel::logError('resolves lazily');
+
+    expect(HasLoggerDefaultChannel::log())->toBeInstanceOf(\Sentinel_Log_Channel::class);
+});
 
 /** Consumer that keeps the trait's derived channel name. */
 final class HasLoggerDefaultChannel

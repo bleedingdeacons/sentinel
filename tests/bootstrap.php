@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * PHPUnit Bootstrap File for Sentinel
+ * Test bootstrap for Sentinel (Pest, over PHPUnit)
  *
  * WordPress stand-ins and the Brain Monkey lifecycle come from
  * bleedingdeacons/wp-mocks, shared across the plugin suite. Its bootstrap loads
@@ -22,6 +22,16 @@ declare(strict_types=1);
 
 use BleedingDeacons\WpMocks\Bootstrap;
 use BleedingDeacons\WpMocks\WpState;
+
+// Pest's launcher does not define PHPUNIT_COMPOSER_INSTALL, which
+// vendor/bin/phpunit does and PHPUnit's separate-process template reads to
+// load Composer in the child. Without it the child has no autoloader at all,
+// and every #[RunInSeparateProcess] test dies before it starts — which is
+// what the UNITY_KILL and PRODUCTION tests need, since a defined constant
+// cannot be undone.
+if (!defined('PHPUNIT_COMPOSER_INSTALL')) {
+    define('PHPUNIT_COMPOSER_INSTALL', dirname(__DIR__) . '/vendor/autoload.php');
+}
 
 require_once __DIR__ . '/../vendor/autoload.php';
 

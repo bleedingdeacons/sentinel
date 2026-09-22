@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
-use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Admin\StatusDashboard;
-use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
 
-/**
+/*
  * Tests for the dashboard status widget.
  *
  * The widget's job is to tell an operator, at a glance, whether the suite
@@ -22,206 +20,166 @@ use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
  * Fixture plugins are written to a temp WP_PLUGIN_DIR so the installed /
  * version / build-date reads run against real files.
  */
-final class StatusDashboardTest extends AdminTestCase
-{
-    /** Point the widget at a small, predictable plugin set. */
-    private function monitor(string $mandatory, string $optional = ''): void
-    {
+
+beforeEach(function () {
+    // Point the widget at a small, predictable plugin set.
+    $this->monitor = function (string $mandatory, string $optional = ''): void {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, $mandatory);
         $this->setOption(SettingsPage::OPTION_OPTIONAL_PLUGINS, $optional);
-    }
+    };
+});
 
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function init_registers_the_widget_hooks(): void
-    {
+// ── registration ──────────────────────────────────────────────────
+describe('registration', function () {
+    // hooks registered
+    it('registers the widget hooks on init', function () {
         StatusDashboard::init();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'hooks registered');
-    }
-
-    #[Test]
-    public function assets_load_only_on_the_dashboard_screen(): void
-    {
+    // enqueue guarded by hook
+    it('loads assets only on the dashboard screen', function () {
         StatusDashboard::enqueueAssets('edit.php');
         StatusDashboard::enqueueAssets('index.php');
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'enqueue guarded by hook');
-    }
-
-    #[Test]
-    public function widget_is_registered_for_a_permitted_user(): void
-    {
+    // widget registered
+    it('registers the widget for a permitted user', function () {
         StatusDashboard::register();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'widget registered');
-    }
-
-    #[Test]
-    public function widget_is_not_registered_without_the_capability(): void
-    {
+    // registration skipped
+    it('does not register the widget without the capability', function () {
         $this->denyCapability();
 
         StatusDashboard::register();
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'registration skipped');
-    }
-
-    // ── rendering ─────────────────────────────────────────────────────
-    #[Test]
-    public function an_installed_and_active_plugin_is_reported_with_its_version(): void
-    {
+// ── rendering ─────────────────────────────────────────────────────
+describe('render', function () {
+    it('reports an installed and active plugin with its version', function () {
         $this->makePlugin('unity/unity.php', '2026-07-23');
         $this->activePlugins = ['unity/unity.php'];
         $this->pluginVersion = '1.18.9';
-        $this->monitor('unity/unity.php|Unity');
+        ($this->monitor)('unity/unity.php|Unity');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Unity', $html);
-        $this->assertStringContainsString('1.18.9', $html);
-        $this->assertStringContainsString('2026-07-23', $html);
-    }
+        expect($html)->toContain('Unity')
+            ->toContain('1.18.9')
+            ->toContain('2026-07-23');
+    });
 
-    #[Test]
-    public function an_installed_but_inactive_plugin_is_distinguished_from_an_active_one(): void
-    {
+    it('distinguishes an installed but inactive plugin from an active one', function () {
         $this->makePlugin('scrutiny/scrutiny.php', '2026-07-22');
         $this->activePlugins = []; // installed, not activated
-        $this->monitor('scrutiny/scrutiny.php|Scrutiny');
+        ($this->monitor)('scrutiny/scrutiny.php|Scrutiny');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Scrutiny', $html);
-    }
+        expect($html)->toContain('Scrutiny');
+    });
 
-    #[Test]
-    public function a_mandatory_plugin_that_is_not_installed_is_still_listed(): void
-    {
+    // Mandatory plugins are always shown so a missing one is visible.
+    it('still lists a mandatory plugin that is not installed', function () {
         // Nothing written to disk for this one.
-        $this->monitor('missing/missing.php|Missing Plugin');
+        ($this->monitor)('missing/missing.php|Missing Plugin');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString(
-            'Missing Plugin',
-            $html,
-            'Mandatory plugins are always shown so a missing one is visible.'
-        );
-    }
+        expect($html)->toContain('Missing Plugin');
+    });
 
-    #[Test]
-    public function an_optional_plugin_is_hidden_when_not_installed(): void
-    {
-        $this->monitor('unity/unity.php|Unity', 'ghost/ghost.php|Ghost Plugin');
+    it('hides an optional plugin when not installed', function () {
+        ($this->monitor)('unity/unity.php|Unity', 'ghost/ghost.php|Ghost Plugin');
         $this->makePlugin('unity/unity.php', '2026-07-23');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Unity', $html);
-        $this->assertStringNotContainsString(
-            'Ghost Plugin',
-            $html,
-            'Optional plugins only appear once installed.'
-        );
-    }
+        expect($html)->toContain('Unity')
+            ->not->toContain('Ghost Plugin'); // Optional plugins only appear once installed.
+    });
 
-    #[Test]
-    public function an_optional_plugin_is_shown_once_installed(): void
-    {
-        $this->monitor('unity/unity.php|Unity', 'reach/reach.php|Reach');
+    it('shows an optional plugin once installed', function () {
+        ($this->monitor)('unity/unity.php|Unity', 'reach/reach.php|Reach');
         $this->makePlugin('unity/unity.php', '2026-07-23');
         $this->makePlugin('reach/reach.php', '2026-07-21');
         $this->activePlugins = ['unity/unity.php', 'reach/reach.php'];
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Reach', $html);
-    }
+        expect($html)->toContain('Reach');
+    });
 
-    #[Test]
-    public function a_key_claimed_by_the_mandatory_list_is_not_duplicated_by_the_optional_one(): void
-    {
-        $this->monitor('unity/unity.php|Unity Mandatory', 'unity/unity.php|Unity Optional');
+    it('does not duplicate a key claimed by the mandatory list from the optional one', function () {
+        ($this->monitor)('unity/unity.php|Unity Mandatory', 'unity/unity.php|Unity Optional');
         $this->makePlugin('unity/unity.php', '2026-07-23');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Unity Mandatory', $html);
-        $this->assertStringNotContainsString('Unity Optional', $html);
-    }
+        expect($html)->toContain('Unity Mandatory')
+            ->not->toContain('Unity Optional');
+    });
 
-    #[Test]
-    public function a_plugin_without_a_readme_reports_no_build_date(): void
-    {
+    it('reports no build date for a plugin without a readme', function () {
         $this->makePlugin('nodate/nodate.php', null); // no readme written
-        $this->monitor('nodate/nodate.php|No Date');
+        ($this->monitor)('nodate/nodate.php|No Date');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('No Date', $html);
-    }
+        expect($html)->toContain('No Date');
+    });
 
-    #[Test]
-    public function an_uppercase_readme_is_also_read_for_the_build_date(): void
-    {
+    it('also reads an uppercase readme for the build date', function () {
         $this->makePlugin('upper/upper.php', '2026-01-09', 'README.txt');
-        $this->monitor('upper/upper.php|Upper');
+        ($this->monitor)('upper/upper.php|Upper');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('2026-01-09', $html);
-    }
+        expect($html)->toContain('2026-01-09');
+    });
 
-    #[Test]
-    public function a_readme_without_a_build_date_line_is_tolerated(): void
-    {
+    it('tolerates a readme without a build date line', function () {
         $this->makePlugin('plain/plain.php', null);
         file_put_contents(WP_PLUGIN_DIR . '/plain/readme.txt', "=== Plain ===\nStable tag: 1.0.0\n");
-        $this->monitor('plain/plain.php|Plain');
+        ($this->monitor)('plain/plain.php|Plain');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertStringContainsString('Plain', $html);
-    }
+        expect($html)->toContain('Plain');
+    });
 
-    #[Test]
-    public function render_copes_with_no_monitored_plugins_at_all(): void
-    {
-        $this->monitor('', '');
+    it('copes with no monitored plugins at all', function () {
+        ($this->monitor)('', '');
 
         $html = $this->capture([StatusDashboard::class, 'render']);
 
-        $this->assertNotSame('', trim($html), 'The widget still renders its shell.');
-    }
+        expect(trim($html))->not->toBe('', 'The widget still renders its shell.');
+    });
+});
 
-    // ── ajax ──────────────────────────────────────────────────────────
-    #[Test]
-    public function ajax_refresh_returns_the_widget_html(): void
-    {
+// ── ajax ──────────────────────────────────────────────────────────
+describe('ajaxRefresh', function () {
+    // wp_send_json_success short-circuits with a JsonResponseException.
+    it('returns the widget html', function () {
         $this->makePlugin('unity/unity.php', '2026-07-23');
-        $this->monitor('unity/unity.php|Unity');
+        ($this->monitor)('unity/unity.php|Unity');
 
-        try {
-            StatusDashboard::ajaxRefresh();
-            $this->fail('Expected wp_send_json_success to short-circuit.');
-        } catch (JsonResponseException $e) {
-            $this->assertTrue($e->success);
-            $this->assertIsArray($e->data);
-            $this->assertStringContainsString('Unity', $e->data['html']);
-        }
-    }
+        expect(fn () => StatusDashboard::ajaxRefresh())
+            ->toThrow(function (JsonResponseException $e) {
+                expect($e->success)->toBeTrue()
+                    ->and($e->data)->toBeArray()
+                    ->and($e->data['html'])->toContain('Unity');
+            });
+    });
 
-    #[Test]
-    public function ajax_refresh_is_refused_without_the_capability(): void
-    {
+    // wp_send_json_error short-circuits with a JsonResponseException.
+    it('is refused without the capability', function () {
         $this->denyCapability();
 
-        try {
-            StatusDashboard::ajaxRefresh();
-            $this->fail('Expected wp_send_json_error to short-circuit.');
-        } catch (JsonResponseException $e) {
-            $this->assertFalse($e->success);
-        }
-    }
-}
+        expect(fn () => StatusDashboard::ajaxRefresh())
+            ->toThrow(function (JsonResponseException $e) {
+                expect($e->success)->toBeFalse();
+            });
+    });
+});
