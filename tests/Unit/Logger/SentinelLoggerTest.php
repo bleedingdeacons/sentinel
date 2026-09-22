@@ -4,91 +4,78 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\Attributes\Test;
-use Sentinel\Tests\TestCase;
-
-/**
+/*
  * Tests for Sentinel_Logger internal logic.
  *
  * The logger is a singleton with database side-effects. We test the
  * pure-logic private methods (interpolation, redaction) via reflection,
  * and test the channel/buffer API through the public surface.
  */
-class SentinelLoggerTest extends TestCase
+
+// MockeryPHPUnitIntegration is applied by Sentinel\Tests\TestCase.
+// Using it here as well makes assertPostConditions() recurse into
+// itself until the process runs out of memory.
+
+/**
+ * Call a private method on Sentinel_Logger via reflection.
+ *
+ * @param array<int, mixed> $args
+ */
+function callLoggerPrivate(string $method, array $args): mixed
 {
-    // MockeryPHPUnitIntegration is applied by Sentinel\Tests\TestCase.
-    // Using it here as well makes assertPostConditions() recurse into
-    // itself until the process runs out of memory.
+    $ref = new \ReflectionMethod(\Sentinel_Logger::class, $method);
 
-    /**
-     * Call a private method on Sentinel_Logger via reflection.
-     */
-    private function callPrivate(string $method, array $args): mixed
-    {
-        $ref = new \ReflectionMethod(\Sentinel_Logger::class, $method);
+    return $ref->invoke(\Sentinel_Logger::instance(), ...$args);
+}
 
-        return $ref->invoke(\Sentinel_Logger::instance(), ...$args);
-    }
-
-    // ── Interpolation ───────────────────────────────────────────────
-    #[Test]
-    public function interpolate_replaces_placeholders_with_context_values(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+// ── Interpolation ───────────────────────────────────────────────
+describe('interpolate', function () {
+    it('replaces placeholders with context values', function () {
+        $result = callLoggerPrivate('interpolate', [
             'User {name} logged in from {ip}',
             ['name' => 'Alice', 'ip' => '192.168.1.1'],
         ]);
 
-        $this->assertSame('User Alice logged in from 192.168.1.1', $result);
-    }
+        expect($result)->toBe('User Alice logged in from 192.168.1.1');
+    });
 
-    #[Test]
-    public function interpolate_leaves_unknown_placeholders_intact(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+    it('leaves unknown placeholders intact', function () {
+        $result = callLoggerPrivate('interpolate', [
             'Hello {name}, your id is {id}',
             ['name' => 'Bob'],
         ]);
 
-        $this->assertSame('Hello Bob, your id is {id}', $result);
-    }
+        expect($result)->toBe('Hello Bob, your id is {id}');
+    });
 
-    #[Test]
-    public function interpolate_ignores_underscore_prefixed_keys(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+    it('ignores underscore-prefixed keys', function () {
+        $result = callLoggerPrivate('interpolate', [
             'Channel is {_channel}',
             ['_channel' => 'unity'],
         ]);
 
-        $this->assertSame('Channel is {_channel}', $result);
-    }
+        expect($result)->toBe('Channel is {_channel}');
+    });
 
-    #[Test]
-    public function interpolate_handles_numeric_values(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+    it('handles numeric values', function () {
+        $result = callLoggerPrivate('interpolate', [
             'Count: {count}, rate: {rate}',
             ['count' => 42, 'rate' => 3.14],
         ]);
 
-        $this->assertSame('Count: 42, rate: 3.14', $result);
-    }
+        expect($result)->toBe('Count: 42, rate: 3.14');
+    });
 
-    #[Test]
-    public function interpolate_skips_non_scalar_values(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+    it('skips non-scalar values', function () {
+        $result = callLoggerPrivate('interpolate', [
             'Data: {arr}, obj: {obj}',
             ['arr' => [1, 2, 3], 'obj' => new \stdClass()],
         ]);
 
-        $this->assertSame('Data: {arr}, obj: {obj}', $result);
-    }
+        expect($result)->toBe('Data: {arr}, obj: {obj}');
+    });
 
-    #[Test]
-    public function interpolate_handles_stringable_objects(): void
-    {
+    it('handles stringable objects', function () {
         $stringable = new class implements \Stringable {
             public function __toString(): string
             {
@@ -96,40 +83,36 @@ class SentinelLoggerTest extends TestCase
             }
         };
 
-        $result = $this->callPrivate('interpolate', [
+        $result = callLoggerPrivate('interpolate', [
             'Value: {val}',
             ['val' => $stringable],
         ]);
 
-        $this->assertSame('Value: stringified', $result);
-    }
+        expect($result)->toBe('Value: stringified');
+    });
 
-    #[Test]
-    public function interpolate_with_empty_context(): void
-    {
-        $result = $this->callPrivate('interpolate', [
+    it('handles an empty context', function () {
+        $result = callLoggerPrivate('interpolate', [
             'No placeholders here',
             [],
         ]);
 
-        $this->assertSame('No placeholders here', $result);
-    }
+        expect($result)->toBe('No placeholders here');
+    });
+});
 
-    // ── Redaction ───────────────────────────────────────────────────
-    #[Test]
-    public function redact_masks_password_key(): void
-    {
-        $result = $this->callPrivate('redact', [
+// ── Redaction ───────────────────────────────────────────────────
+describe('redact', function () {
+    it('masks the password key', function () {
+        $result = callLoggerPrivate('redact', [
             ['password' => 's3cret', 'username' => 'alice'],
         ]);
 
-        $this->assertSame('*** REDACTED ***', $result['password']);
-        $this->assertSame('alice', $result['username']);
-    }
+        expect($result['password'])->toBe('*** REDACTED ***')
+            ->and($result['username'])->toBe('alice');
+    });
 
-    #[Test]
-    public function redact_masks_all_sensitive_keys(): void
-    {
+    it('masks all sensitive keys', function () {
         $sensitiveKeys = [
             'password', 'passwd', 'secret', 'token', 'api_key',
             'apikey', 'access_token', 'refresh_token', 'credit_card',
@@ -137,33 +120,25 @@ class SentinelLoggerTest extends TestCase
         ];
 
         foreach ($sensitiveKeys as $key) {
-            $result = $this->callPrivate('redact', [
+            $result = callLoggerPrivate('redact', [
                 [$key => 'sensitive-value'],
             ]);
 
-            $this->assertSame(
-                '*** REDACTED ***',
-                $result[$key],
-                "Key '{$key}' should be redacted"
-            );
+            expect($result[$key])->toBe('*** REDACTED ***', "Key '{$key}' should be redacted");
         }
-    }
+    });
 
-    #[Test]
-    public function redact_is_case_insensitive(): void
-    {
-        $result = $this->callPrivate('redact', [
+    it('is case-insensitive', function () {
+        $result = callLoggerPrivate('redact', [
             ['PASSWORD' => 'secret', 'Api_Key' => 'key123'],
         ]);
 
-        $this->assertSame('*** REDACTED ***', $result['PASSWORD']);
-        $this->assertSame('*** REDACTED ***', $result['Api_Key']);
-    }
+        expect($result['PASSWORD'])->toBe('*** REDACTED ***')
+            ->and($result['Api_Key'])->toBe('*** REDACTED ***');
+    });
 
-    #[Test]
-    public function redact_handles_nested_arrays(): void
-    {
-        $result = $this->callPrivate('redact', [
+    it('handles nested arrays', function () {
+        $result = callLoggerPrivate('redact', [
             [
                 'config' => [
                     'token' => 'abc123',
@@ -172,74 +147,62 @@ class SentinelLoggerTest extends TestCase
             ],
         ]);
 
-        $this->assertSame('*** REDACTED ***', $result['config']['token']);
-        $this->assertSame('example.com', $result['config']['host']);
-    }
+        expect($result['config']['token'])->toBe('*** REDACTED ***')
+            ->and($result['config']['host'])->toBe('example.com');
+    });
 
-    #[Test]
-    public function redact_preserves_non_sensitive_keys(): void
-    {
-        $result = $this->callPrivate('redact', [
+    it('preserves non-sensitive keys', function () {
+        $result = callLoggerPrivate('redact', [
             ['name' => 'Alice', 'action' => 'login', 'count' => 5],
         ]);
 
-        $this->assertSame('Alice', $result['name']);
-        $this->assertSame('login', $result['action']);
-        $this->assertSame(5, $result['count']);
-    }
+        expect($result['name'])->toBe('Alice')
+            ->and($result['action'])->toBe('login')
+            ->and($result['count'])->toBe(5);
+    });
 
-    #[Test]
-    public function redact_handles_empty_context(): void
-    {
-        $result = $this->callPrivate('redact', [[]]);
+    it('handles an empty context', function () {
+        $result = callLoggerPrivate('redact', [[]]);
 
-        $this->assertSame([], $result);
-    }
+        expect($result)->toBe([]);
+    });
+});
 
-    // ── Channel ─────────────────────────────────────────────────────
-    #[Test]
-    public function channel_returns_a_log_channel(): void
-    {
+// ── Channel ─────────────────────────────────────────────────────
+describe('channel', function () {
+    it('returns a log channel', function () {
         $channel = \Sentinel_Logger::channel('test-plugin');
 
-        $this->assertInstanceOf(\Sentinel_Log_Channel::class, $channel);
-    }
+        expect($channel)->toBeInstanceOf(\Sentinel_Log_Channel::class);
+    });
 
-    #[Test]
-    public function channel_returns_same_instance_for_same_name(): void
-    {
+    it('returns the same instance for the same name', function () {
         $a = \Sentinel_Logger::channel('my-plugin');
         $b = \Sentinel_Logger::channel('my-plugin');
 
-        $this->assertSame($a, $b);
-    }
+        expect($b)->toBe($a);
+    });
 
-    #[Test]
-    public function channel_returns_different_instances_for_different_names(): void
-    {
+    it('returns different instances for different names', function () {
         $a = \Sentinel_Logger::channel('plugin-a');
         $b = \Sentinel_Logger::channel('plugin-b');
 
-        $this->assertNotSame($a, $b);
-    }
+        expect($b)->not->toBe($a);
+    });
 
-    #[Test]
-    public function channel_getChannel_returns_sanitized_name(): void
-    {
+    it('returns a sanitized name from getChannel', function () {
         $channel = \Sentinel_Logger::channel('My-Plugin_Test');
 
         // sanitize_key lowercases and strips non-alphanumeric except dashes/underscores
-        $this->assertSame($channel->getChannel(), $channel->getChannel());
-        $this->assertNotEmpty($channel->getChannel());
-    }
+        expect($channel->getChannel())->toBe($channel->getChannel())
+            ->not->toBeEmpty();
+    });
+});
 
-    // ── Buffer count ────────────────────────────────────────────────
-    #[Test]
-    public function bufferCount_returns_integer(): void
-    {
-        $count = \Sentinel_Logger::instance()->bufferCount();
+// ── Buffer count ────────────────────────────────────────────────
+it('returns an integer from bufferCount', function () {
+    $count = \Sentinel_Logger::instance()->bufferCount();
 
-        $this->assertIsInt($count);
-        $this->assertGreaterThanOrEqual(0, $count);
-    }
-}
+    expect($count)->toBeInt()
+        ->toBeGreaterThanOrEqual(0);
+});

@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
-use PHPUnit\Framework\Attributes\Test;
 use ReflectionProperty;
 use Sentinel\Admin\UnityControlPage;
-use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 
-/**
+/*
  * Tests for the Unity Control page.
  *
  * This page edits wp-config.php to stand Unity down (UNITY_KILL) and to
@@ -26,309 +24,263 @@ use BleedingDeacons\WpMocks\Exceptions\WpDieException;
  * exercised here — which is also the branch that matters, since a site
  * with the switch engaged never reaches this admin page.
  */
-final class UnityControlPageTest extends AdminTestCase
+
+const CONTROL_KILL_MARKER = '/* Unity Kill Switch (managed by Sentinel) */';
+const CONTROL_PROD_MARKER = '/* Environment Flag (managed by Sentinel) */';
+
+/**
+ * handleSave() latches a private static flag on success, which would
+ * otherwise bleed into the rendering tests.
+ */
+function resetControlJustChanged(): void
 {
-    private const KILL_MARKER = '/* Unity Kill Switch (managed by Sentinel) */';
-    private const PROD_MARKER = '/* Environment Flag (managed by Sentinel) */';
+    $prop = new ReflectionProperty(UnityControlPage::class, 'justChanged');
+    $prop->setValue(null, false);
+}
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->resetJustChanged();
-        $_POST = [];
-    }
+/**
+ * Submit the page's form with the given action.
+ *
+ * @param array<string, string> $extra
+ */
+function submitUnityControl(string $action, array $extra = []): void
+{
+    $_POST = array_merge([
+        '_sentinel_unity_nonce'  => 'n',
+        'sentinel_unity_action'  => $action,
+    ], $extra);
 
-    protected function tearDown(): void
-    {
-        $_POST = [];
-        $this->resetJustChanged();
-        parent::tearDown();
-    }
+    UnityControlPage::handleSave();
+}
 
-    /**
-     * handleSave() latches a private static flag on success, which would
-     * otherwise bleed into the rendering tests.
-     */
-    private function resetJustChanged(): void
-    {
-        $prop = new ReflectionProperty(UnityControlPage::class, 'justChanged');
-        $prop->setValue(null, false);
-    }
+beforeEach(function () {
+    resetControlJustChanged();
+    $_POST = [];
+});
 
-    /** Submit the page's form with the given action. */
-    private function submit(string $action, array $extra = []): void
-    {
-        $_POST = array_merge([
-            '_sentinel_unity_nonce'  => 'n',
-            'sentinel_unity_action'  => $action,
-        ], $extra);
+afterEach(function () {
+    $_POST = [];
+    resetControlJustChanged();
+});
 
-        UnityControlPage::handleSave();
-    }
+// ── registration ──────────────────────────────────────────────────
+// registration completed
+it('runs init and registerPage without error', function () {
+    UnityControlPage::init();
+    UnityControlPage::registerPage();
+})->throwsNoExceptions();
 
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function init_and_register_page_run_without_error(): void
-    {
-        UnityControlPage::init();
-        UnityControlPage::registerPage();
-
-        $this->assertTrue(true, 'registration completed');
-    }
-
-    // ── save handler guards ───────────────────────────────────────────
-    #[Test]
-    public function save_handler_ignores_requests_without_its_nonce_field(): void
-    {
+// ── save handler guards ───────────────────────────────────────────
+describe('save handler guards', function () {
+    // returned before touching wp-config.php
+    it('ignores requests without its nonce field', function () {
         $_POST = ['sentinel_unity_action' => 'disable'];
 
         UnityControlPage::handleSave();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'returned before touching wp-config.php');
-    }
-
-    #[Test]
-    public function save_handler_refuses_users_without_the_capability(): void
-    {
+    it('refuses users without the capability', function () {
         $this->denyCapability();
         $_POST = ['_sentinel_unity_nonce' => 'n'];
 
-        $this->expectException(WpDieException::class);
-
         UnityControlPage::handleSave();
-    }
+    })->throws(WpDieException::class);
 
-    #[Test]
-    public function save_handler_ignores_an_unrecognised_action(): void
-    {
+    it('ignores an unrecognised action', function () {
         $this->writeWpConfig();
         $before = $this->readWpConfig();
 
-        $this->submit('something-else');
+        submitUnityControl('something-else');
 
-        $this->assertSame($before, $this->readWpConfig(), 'Unknown actions are dropped.');
-    }
+        expect($this->readWpConfig())->toBe($before, 'Unknown actions are dropped.');
+    });
 
-    #[Test]
-    public function save_handler_reports_an_unwritable_config(): void
-    {
+    // not-writable branch reported via add_settings_error
+    it('reports an unwritable config', function () {
         $this->removeWpConfig();
 
         if (file_exists(dirname(ABSPATH) . '/wp-config.php')) {
             $this->markTestSkipped('A wp-config.php exists above ABSPATH on this machine.');
         }
 
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'not-writable branch reported via add_settings_error');
-    }
-
-    // ── kill switch ───────────────────────────────────────────────────
-    #[Test]
-    public function disabling_unity_requires_the_confirmation_checkbox(): void
-    {
+// ── kill switch ───────────────────────────────────────────────────
+describe('kill switch', function () {
+    // Without confirmation the kill switch must not be written.
+    it('requires the confirmation checkbox to disable Unity', function () {
         $this->writeWpConfig();
 
-        $this->submit('disable'); // no confirmation ticked
+        submitUnityControl('disable'); // no confirmation ticked
 
-        $this->assertStringNotContainsString(
-            'UNITY_KILL',
-            $this->readWpConfig(),
-            'Without confirmation the kill switch must not be written.'
-        );
-    }
+        expect($this->readWpConfig())->not->toContain('UNITY_KILL');
+    });
 
-    #[Test]
-    public function disabling_unity_writes_the_kill_switch_with_its_marker(): void
-    {
+    it('writes the kill switch with its marker when disabling Unity', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
 
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString(self::KILL_MARKER, $config);
-        $this->assertStringContainsString("define( 'UNITY_KILL', true );", $config);
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->toContain(CONTROL_KILL_MARKER)
+            ->toContain("define( 'UNITY_KILL', true );")
+            ->toContain("\$table_prefix = 'wp_';");
+    });
 
-    #[Test]
-    public function disabling_twice_replaces_rather_than_duplicates(): void
-    {
-        $this->writeWpConfig("<?php\n" . self::KILL_MARKER . "\ndefine( 'UNITY_KILL', false );\n");
+    it('replaces rather than duplicates when disabling twice', function () {
+        $this->writeWpConfig("<?php\n" . CONTROL_KILL_MARKER . "\ndefine( 'UNITY_KILL', false );\n");
 
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'UNITY_KILL', true );", $config);
-        $this->assertSame(1, substr_count($config, 'UNITY_KILL'));
-        $this->assertSame(1, substr_count($config, self::KILL_MARKER));
-    }
+        expect($config)->toContain("define( 'UNITY_KILL', true );")
+            ->and(substr_count($config, 'UNITY_KILL'))->toBe(1)
+            ->and(substr_count($config, CONTROL_KILL_MARKER))->toBe(1);
+    });
 
-    #[Test]
-    public function enabling_unity_removes_the_define_and_marker(): void
-    {
+    it('removes the define and marker when enabling Unity', function () {
         $this->writeWpConfig(
-            "<?php\n" . self::KILL_MARKER . "\ndefine( 'UNITY_KILL', true );\n\$table_prefix = 'wp_';\n"
+            "<?php\n" . CONTROL_KILL_MARKER . "\ndefine( 'UNITY_KILL', true );\n\$table_prefix = 'wp_';\n"
         );
 
-        $this->submit('enable');
+        submitUnityControl('enable');
 
         $config = $this->readWpConfig();
-        $this->assertStringNotContainsString('UNITY_KILL', $config);
-        $this->assertStringNotContainsString(self::KILL_MARKER, $config);
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->not->toContain('UNITY_KILL')
+            ->not->toContain(CONTROL_KILL_MARKER)
+            ->toContain("\$table_prefix = 'wp_';");
+    });
 
-    #[Test]
-    public function enabling_unity_when_it_was_never_disabled_is_a_no_op(): void
-    {
+    it('treats enabling Unity when it was never disabled as a no-op', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
         $before = $this->readWpConfig();
 
-        $this->submit('enable');
+        submitUnityControl('enable');
 
-        $this->assertSame($before, $this->readWpConfig());
-    }
+        expect($this->readWpConfig())->toBe($before);
+    });
 
-    #[Test]
-    public function the_kill_switch_is_written_even_without_a_php_opening_tag(): void
-    {
+    it('writes the kill switch even without a PHP opening tag', function () {
         $this->writeWpConfig("no php tag\n");
 
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
 
         $config = $this->readWpConfig();
-        $this->assertStringStartsWith('<?php', $config);
-        $this->assertStringContainsString("define( 'UNITY_KILL', true );", $config);
-    }
+        expect($config)->toStartWith('<?php')
+            ->toContain("define( 'UNITY_KILL', true );");
+    });
 
-    #[Test]
-    public function the_kill_switch_appends_when_the_config_is_a_single_line(): void
-    {
+    it('appends the kill switch when the config is a single line', function () {
         $this->writeWpConfig('<?php');
 
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
 
-        $this->assertStringContainsString("define( 'UNITY_KILL', true );", $this->readWpConfig());
-    }
+        expect($this->readWpConfig())->toContain("define( 'UNITY_KILL', true );");
+    });
+});
 
-    // ── PRODUCTION flag ───────────────────────────────────────────────
-    #[Test]
-    public function turning_production_off_writes_the_constant_false(): void
-    {
+// ── PRODUCTION flag ───────────────────────────────────────────────
+describe('PRODUCTION flag', function () {
+    it('writes the constant false when turning production off', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
 
-        $this->submit('production_off');
+        submitUnityControl('production_off');
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString(self::PROD_MARKER, $config);
-        $this->assertStringContainsString("define( 'PRODUCTION', false );", $config);
-    }
+        expect($config)->toContain(CONTROL_PROD_MARKER)
+            ->toContain("define( 'PRODUCTION', false );");
+    });
 
-    #[Test]
-    public function turning_production_on_removes_the_constant_entirely(): void
-    {
+    it('removes the constant entirely when turning production on', function () {
         // Production is the runtime default, so "on" means removing the
         // define rather than writing true.
         $this->writeWpConfig(
-            "<?php\n" . self::PROD_MARKER . "\ndefine( 'PRODUCTION', false );\n\$table_prefix = 'wp_';\n"
+            "<?php\n" . CONTROL_PROD_MARKER . "\ndefine( 'PRODUCTION', false );\n\$table_prefix = 'wp_';\n"
         );
 
-        $this->submit('production_on');
+        submitUnityControl('production_on');
 
         $config = $this->readWpConfig();
-        $this->assertStringNotContainsString('PRODUCTION', $config);
-        $this->assertStringNotContainsString(self::PROD_MARKER, $config);
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->not->toContain('PRODUCTION')
+            ->not->toContain(CONTROL_PROD_MARKER)
+            ->toContain("\$table_prefix = 'wp_';");
+    });
 
-    #[Test]
-    public function turning_production_off_twice_replaces_rather_than_duplicates(): void
-    {
-        $this->writeWpConfig("<?php\n" . self::PROD_MARKER . "\ndefine( 'PRODUCTION', true );\n");
+    it('replaces rather than duplicates when turning production off twice', function () {
+        $this->writeWpConfig("<?php\n" . CONTROL_PROD_MARKER . "\ndefine( 'PRODUCTION', true );\n");
 
-        $this->submit('production_off');
+        submitUnityControl('production_off');
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'PRODUCTION', false );", $config);
-        $this->assertSame(1, substr_count($config, 'PRODUCTION', 0));
-        $this->assertSame(1, substr_count($config, self::PROD_MARKER));
-    }
+        expect($config)->toContain("define( 'PRODUCTION', false );")
+            ->and(substr_count($config, 'PRODUCTION', 0))->toBe(1)
+            ->and(substr_count($config, CONTROL_PROD_MARKER))->toBe(1);
+    });
 
-    #[Test]
-    public function turning_production_on_when_undefined_is_a_no_op(): void
-    {
+    it('treats turning production on when undefined as a no-op', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
         $before = $this->readWpConfig();
 
-        $this->submit('production_on');
+        submitUnityControl('production_on');
 
-        $this->assertSame($before, $this->readWpConfig());
-    }
+        expect($this->readWpConfig())->toBe($before);
+    });
 
-    #[Test]
-    public function production_is_written_even_without_a_php_opening_tag(): void
-    {
+    it('writes production even without a PHP opening tag', function () {
         $this->writeWpConfig("no php tag\n");
 
-        $this->submit('production_off');
+        submitUnityControl('production_off');
 
-        $this->assertStringStartsWith('<?php', $this->readWpConfig());
-        $this->assertStringContainsString("define( 'PRODUCTION', false );", $this->readWpConfig());
-    }
+        expect($this->readWpConfig())->toStartWith('<?php')
+            ->and($this->readWpConfig())->toContain("define( 'PRODUCTION', false );");
+    });
 
-    #[Test]
-    public function production_appends_when_the_config_is_a_single_line(): void
-    {
+    it('appends production when the config is a single line', function () {
         $this->writeWpConfig('<?php');
 
-        $this->submit('production_off');
+        submitUnityControl('production_off');
 
-        $this->assertStringContainsString("define( 'PRODUCTION', false );", $this->readWpConfig());
-    }
+        expect($this->readWpConfig())->toContain("define( 'PRODUCTION', false );");
+    });
+});
 
-    // ── rendering ─────────────────────────────────────────────────────
-    #[Test]
-    public function render_page_shows_unity_running_when_no_kill_switch_is_set(): void
-    {
+// ── rendering ─────────────────────────────────────────────────────
+describe('renderPage', function () {
+    it('shows Unity running when no kill switch is set', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
 
         $html = $this->capture([UnityControlPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('Unity Control', $html);
-        $this->assertStringContainsString('<form', $html);
-        // Dependent plugins are listed so the operator knows the blast radius.
-        $this->assertStringContainsString('Scrutiny', $html);
-    }
+        expect($html)->toContain('Unity Control')
+            ->toContain('<form')
+            // Dependent plugins are listed so the operator knows the blast radius.
+            ->toContain('Scrutiny');
+    });
 
-    #[Test]
-    public function render_page_reflects_a_kill_switch_present_in_the_file(): void
-    {
+    it('reflects a kill switch present in the file', function () {
         $this->writeWpConfig(
-            "<?php\n" . self::KILL_MARKER . "\ndefine( 'UNITY_KILL', true );\n"
+            "<?php\n" . CONTROL_KILL_MARKER . "\ndefine( 'UNITY_KILL', true );\n"
         );
 
         $html = $this->capture([UnityControlPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('Unity Control', $html);
-        $this->assertNotSame('', trim($html));
-    }
+        expect($html)->toContain('Unity Control')
+            ->and(trim($html))->not->toBe('');
+    });
 
-    #[Test]
-    public function render_page_reflects_production_defined_in_the_file(): void
-    {
+    it('reflects production defined in the file', function () {
         $this->writeWpConfig(
-            "<?php\n" . self::PROD_MARKER . "\ndefine( 'PRODUCTION', false );\n"
+            "<?php\n" . CONTROL_PROD_MARKER . "\ndefine( 'PRODUCTION', false );\n"
         );
 
         $html = $this->capture([UnityControlPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('Unity Control', $html);
-    }
+        expect($html)->toContain('Unity Control');
+    });
 
-    #[Test]
-    public function render_page_handles_a_missing_wp_config(): void
-    {
+    it('handles a missing wp-config', function () {
         $this->removeWpConfig();
 
         if (file_exists(dirname(ABSPATH) . '/wp-config.php')) {
@@ -338,27 +290,21 @@ final class UnityControlPageTest extends AdminTestCase
         $html = $this->capture([UnityControlPage::class, 'renderPage']);
 
         // Falls back to the manual-instructions path rather than fataling.
-        $this->assertStringContainsString('Unity Control', $html);
-    }
+        expect($html)->toContain('Unity Control');
+    });
 
-    #[Test]
-    public function render_page_emits_the_reload_script_after_a_successful_change(): void
-    {
+    it('emits the reload script after a successful change', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
-        $this->submit('disable', ['sentinel_unity_confirm' => '1']);
+        submitUnityControl('disable', ['sentinel_unity_confirm' => '1']);
 
         $html = $this->capture([UnityControlPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('Unity Control', $html);
-    }
+        expect($html)->toContain('Unity Control');
+    });
 
-    #[Test]
-    public function render_page_refuses_users_without_the_capability(): void
-    {
+    it('refuses users without the capability', function () {
         $this->denyCapability();
 
-        $this->expectException(WpDieException::class);
-
         UnityControlPage::renderPage();
-    }
-}
+    })->throws(WpDieException::class);
+});

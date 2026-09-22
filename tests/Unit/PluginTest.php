@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit;
 
-use PHPUnit\Framework\Attributes\Test;
 use ReflectionProperty;
 use Sentinel\Plugin;
-use Sentinel\Tests\AdminTestCase;
 
-/**
+/*
  * Tests for the plugin bootstrap and its top-level admin menu.
  *
  * init() is guarded so it can only run once per request; the admin menu
@@ -17,65 +15,53 @@ use Sentinel\Tests\AdminTestCase;
  * submenu entry duplicating the parent label. Both behaviours are easy to
  * regress and invisible until someone looks at the menu.
  */
-final class PluginTest extends AdminTestCase
+
+function resetPluginInitialised(): void
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->resetInitialised();
-    }
+    $prop = new ReflectionProperty(Plugin::class, 'initialized');
+    $prop->setValue(null, false);
+}
 
-    protected function tearDown(): void
-    {
-        $this->resetInitialised();
-        unset($GLOBALS['submenu']);
+function isPluginInitialised(): bool
+{
+    $prop = new ReflectionProperty(Plugin::class, 'initialized');
 
-        parent::tearDown();
-    }
+    return (bool) $prop->getValue();
+}
 
-    private function resetInitialised(): void
-    {
-        $prop = new ReflectionProperty(Plugin::class, 'initialized');
-        $prop->setValue(null, false);
-    }
+beforeEach(function () {
+    resetPluginInitialised();
+});
 
-    private function isInitialised(): bool
-    {
-        $prop = new ReflectionProperty(Plugin::class, 'initialized');
+afterEach(function () {
+    resetPluginInitialised();
+    unset($GLOBALS['submenu']);
+});
 
-        return (bool) $prop->getValue();
-    }
-
-    #[Test]
-    public function init_wires_the_admin_surface_once(): void
-    {
+describe('init', function () {
+    it('wires the admin surface once', function () {
         Plugin::init();
 
-        $this->assertTrue($this->isInitialised());
-    }
+        expect(isPluginInitialised())->toBeTrue();
+    });
 
-    #[Test]
-    public function init_is_idempotent(): void
-    {
+    it('is idempotent', function () {
         Plugin::init();
         // A second call must return early rather than registering every
         // page a second time.
         Plugin::init();
 
-        $this->assertTrue($this->isInitialised());
-    }
+        expect(isPluginInitialised())->toBeTrue();
+    });
+});
 
-    #[Test]
-    public function register_top_level_menu_adds_the_sentinel_menu(): void
-    {
-        Plugin::registerTopLevelMenu();
+// menu registered
+it('adds the Sentinel menu in registerTopLevelMenu', function () {
+    Plugin::registerTopLevelMenu();
+})->throwsNoExceptions();
 
-        $this->assertTrue(true, 'menu registered');
-    }
-
-    #[Test]
-    public function duplicate_submenu_entry_is_removed(): void
-    {
+describe('removeDuplicateSubmenu', function () {
+    it('removes the duplicate submenu entry', function () {
         // WordPress auto-creates a first submenu whose slug equals the
         // parent slug; that is the one that must go.
         $GLOBALS['submenu'] = [
@@ -88,23 +74,19 @@ final class PluginTest extends AdminTestCase
         Plugin::removeDuplicateSubmenu();
 
         $remaining = array_values($GLOBALS['submenu'][Plugin::MENU_SLUG]);
-        $this->assertCount(1, $remaining);
-        $this->assertSame('sentinel-settings', $remaining[0][2]);
-    }
+        expect($remaining)->toHaveCount(1)
+            ->and($remaining[0][2])->toBe('sentinel-settings');
+    });
 
-    #[Test]
-    public function submenu_cleanup_is_a_no_op_when_there_is_no_submenu(): void
-    {
+    it('is a no-op when there is no submenu', function () {
         $GLOBALS['submenu'] = [];
 
         Plugin::removeDuplicateSubmenu();
 
-        $this->assertSame([], $GLOBALS['submenu']);
-    }
+        expect($GLOBALS['submenu'])->toBe([]);
+    });
 
-    #[Test]
-    public function submenu_cleanup_leaves_a_menu_without_a_duplicate_alone(): void
-    {
+    it('leaves a menu without a duplicate alone', function () {
         $GLOBALS['submenu'] = [
             Plugin::MENU_SLUG => [
                 0 => ['Settings', 'manage_options', 'sentinel-settings'],
@@ -114,6 +96,6 @@ final class PluginTest extends AdminTestCase
 
         Plugin::removeDuplicateSubmenu();
 
-        $this->assertCount(2, $GLOBALS['submenu'][Plugin::MENU_SLUG]);
-    }
-}
+        expect($GLOBALS['submenu'][Plugin::MENU_SLUG])->toHaveCount(2);
+    });
+});

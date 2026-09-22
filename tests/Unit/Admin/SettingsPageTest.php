@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
-use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\SettingsPage;
-use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 
-/**
+/*
  * Tests for the Sentinel settings page.
  *
  * Two areas carry the real risk and get the closest attention:
@@ -22,130 +20,105 @@ use BleedingDeacons\WpMocks\Exceptions\WpDieException;
  *     regex replacement, marker insertion and atomic rename are all
  *     genuinely exercised rather than mocked away.
  */
-final class SettingsPageTest extends AdminTestCase
-{
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function init_and_registration_hooks_run_without_error(): void
-    {
+
+// ── registration ──────────────────────────────────────────────────
+describe('registration', function () {
+    // registration completed
+    it('runs init and the registration hooks without error', function () {
         SettingsPage::init();
         SettingsPage::registerPage();
         SettingsPage::registerSettings();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'registration completed');
-    }
-
-    #[Test]
-    public function enqueue_assets_only_loads_on_its_own_screen(): void
-    {
+    // enqueue guarded by hook suffix
+    it('loads assets only on its own screen', function () {
         // registerPage() records the hook suffix returned by
         // add_submenu_page(); anything else must be ignored.
         SettingsPage::registerPage();
 
         SettingsPage::enqueueAssets('some-other-page');
         SettingsPage::enqueueAssets($this->submenuHook('sentinel-settings'));
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'enqueue guarded by hook suffix');
-    }
+// ── sanitizePluginList ────────────────────────────────────────────
+describe('sanitizePluginList', function () {
+    it('returns an empty string for a non-string', function () {
+        expect(SettingsPage::sanitizePluginList(null))->toBe('')
+            ->and(SettingsPage::sanitizePluginList(['a']))->toBe('')
+            ->and(SettingsPage::sanitizePluginList(42))->toBe('');
+    });
 
-    // ── sanitizePluginList ────────────────────────────────────────────
-    #[Test]
-    public function sanitize_plugin_list_returns_empty_string_for_non_string(): void
-    {
-        $this->assertSame('', SettingsPage::sanitizePluginList(null));
-        $this->assertSame('', SettingsPage::sanitizePluginList(['a']));
-        $this->assertSame('', SettingsPage::sanitizePluginList(42));
-    }
-
-    #[Test]
-    public function sanitize_plugin_list_drops_blank_and_comment_lines(): void
-    {
+    it('drops blank and comment lines', function () {
         $input = "unity/unity.php|Unity\r\n\r\n# a comment\n   \nreach/reach.php|Reach\r";
 
-        $this->assertSame(
+        expect(SettingsPage::sanitizePluginList($input))->toBe(
             "unity/unity.php|Unity\nreach/reach.php|Reach",
-            SettingsPage::sanitizePluginList($input),
             'CRLF is normalised and blank/comment lines are stripped.'
         );
-    }
+    });
+});
 
-    // ── plugin list parsing ───────────────────────────────────────────
-    #[Test]
-    public function mandatory_plugins_fall_back_to_the_shipped_default_list(): void
-    {
+// ── plugin list parsing ───────────────────────────────────────────
+describe('plugin list parsing', function () {
+    it('falls back to the shipped default list for mandatory plugins', function () {
         $plugins = SettingsPage::getMandatoryPlugins();
 
-        $this->assertArrayHasKey('unity', $plugins);
-        $this->assertSame('unity/unity.php', $plugins['unity']['file']);
-        $this->assertSame('Unity', $plugins['unity']['label']);
-        $this->assertArrayHasKey('scrutiny', $plugins);
-    }
+        expect($plugins)->toHaveKey('unity')
+            ->and($plugins['unity']['file'])->toBe('unity/unity.php')
+            ->and($plugins['unity']['label'])->toBe('Unity')
+            ->and($plugins)->toHaveKey('scrutiny');
+    });
 
-    #[Test]
-    public function optional_plugins_fall_back_to_the_shipped_default_list(): void
-    {
+    it('falls back to the shipped default list for optional plugins', function () {
         $plugins = SettingsPage::getOptionalPlugins();
 
-        $this->assertArrayHasKey('reach', $plugins);
-        $this->assertSame('Reach', $plugins['reach']['label']);
-    }
+        expect($plugins)->toHaveKey('reach')
+            ->and($plugins['reach']['label'])->toBe('Reach');
+    });
 
-    /**
-     * Promises is optional rather than mandatory: it is an MCP server, present
-     * on the sites that connect a client and absent everywhere else, so a site
-     * without it is not a site with something missing.
-     */
-    #[Test]
-    public function promises_is_monitored_as_an_optional_plugin(): void
-    {
+    // Promises is optional rather than mandatory: it is an MCP server, present
+    // on the sites that connect a client and absent everywhere else, so a site
+    // without it is not a site with something missing.
+    it('monitors Promises as an optional plugin', function () {
         $plugins = SettingsPage::getOptionalPlugins();
 
-        $this->assertArrayHasKey('promises', $plugins);
-        $this->assertSame('promises/promises.php', $plugins['promises']['file']);
-        $this->assertSame('Promises', $plugins['promises']['label']);
+        expect($plugins)->toHaveKey('promises')
+            ->and($plugins['promises']['file'])->toBe('promises/promises.php')
+            ->and($plugins['promises']['label'])->toBe('Promises')
+            ->and(SettingsPage::getMandatoryPlugins())->not->toHaveKey('promises');
+    });
 
-        $this->assertArrayNotHasKey('promises', SettingsPage::getMandatoryPlugins());
-    }
-
-    /**
-     * Fellowship is mandatory rather than optional, which is a deliberate
-     * difference from Reach and Promises beside it.
-     *
-     * <b>It is the server half of a pair.</b> Link is on members' phones,
-     * and a handset whose Fellowship has stopped does not say so — it goes
-     * on polling and quietly collects nothing. That is the failure the
-     * stability indicator exists to catch, and it cannot catch it for a
-     * plugin it only watches when present.
-     *
-     * The cost is the ordinary cost of mandatory: a site that has never
-     * installed Fellowship now reports it missing. Move it to the optional
-     * list if that is ever the wrong trade.
-     */
-    #[Test]
-    public function fellowship_is_monitored_as_a_mandatory_plugin(): void
-    {
+    // Fellowship is mandatory rather than optional, which is a deliberate
+    // difference from Reach and Promises beside it.
+    //
+    // <b>It is the server half of a pair.</b> Link is on members' phones,
+    // and a handset whose Fellowship has stopped does not say so — it goes
+    // on polling and quietly collects nothing. That is the failure the
+    // stability indicator exists to catch, and it cannot catch it for a
+    // plugin it only watches when present.
+    //
+    // The cost is the ordinary cost of mandatory: a site that has never
+    // installed Fellowship now reports it missing. Move it to the optional
+    // list if that is ever the wrong trade.
+    it('monitors Fellowship as a mandatory plugin', function () {
         $plugins = SettingsPage::getMandatoryPlugins();
 
-        $this->assertArrayHasKey('fellowship', $plugins);
-        $this->assertSame('fellowship/fellowship.php', $plugins['fellowship']['file']);
-        $this->assertSame('Fellowship', $plugins['fellowship']['label']);
+        expect($plugins)->toHaveKey('fellowship')
+            ->and($plugins['fellowship']['file'])->toBe('fellowship/fellowship.php')
+            ->and($plugins['fellowship']['label'])->toBe('Fellowship')
+            ->and(SettingsPage::getOptionalPlugins())->not->toHaveKey('fellowship');
+    });
 
-        $this->assertArrayNotHasKey('fellowship', SettingsPage::getOptionalPlugins());
-    }
-
-    #[Test]
-    public function parser_derives_a_humanised_label_when_none_is_given(): void
-    {
+    it('derives a humanised label when none is given', function () {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, "my-great_plugin/file.php");
 
         $plugins = SettingsPage::getMandatoryPlugins();
 
-        $this->assertSame('My Great Plugin', $plugins['my-great_plugin']['label']);
-    }
+        expect($plugins['my-great_plugin']['label'])->toBe('My Great Plugin');
+    });
 
-    #[Test]
-    public function parser_keeps_the_first_of_a_duplicated_key(): void
-    {
+    it('keeps the first of a duplicated key', function () {
         $this->setOption(
             SettingsPage::OPTION_MANDATORY_PLUGINS,
             "unity/unity.php|First\nunity/other.php|Second"
@@ -153,102 +126,88 @@ final class SettingsPageTest extends AdminTestCase
 
         $plugins = SettingsPage::getMandatoryPlugins();
 
-        $this->assertCount(1, $plugins);
-        $this->assertSame('First', $plugins['unity']['label']);
-    }
+        expect($plugins)->toHaveCount(1)
+            ->and($plugins['unity']['label'])->toBe('First');
+    });
 
-    #[Test]
-    public function parser_handles_an_entry_with_no_directory_segment(): void
-    {
+    it('handles an entry with no directory segment', function () {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, "single.php|Single");
 
         $plugins = SettingsPage::getMandatoryPlugins();
 
         // With no slash the whole entry becomes the key, via sanitize_key.
-        $this->assertNotEmpty($plugins);
-        $this->assertSame('single.php', reset($plugins)['file']);
-    }
+        expect($plugins)->not->toBeEmpty()
+            ->and(reset($plugins)['file'])->toBe('single.php');
+    });
 
-    #[Test]
-    public function parser_skips_lines_with_an_empty_file_or_key(): void
-    {
+    it('skips lines with an empty file or key', function () {
         // "|Label" has no file; "###" sanitises to an empty key.
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, "|Label\n/leading-slash.php|X\nok/ok.php|OK");
 
         $plugins = SettingsPage::getMandatoryPlugins();
 
-        $this->assertArrayHasKey('ok', $plugins);
-        $this->assertArrayNotHasKey('', $plugins);
-    }
+        expect($plugins)->toHaveKey('ok')
+            ->not->toHaveKey('');
+    });
 
-    #[Test]
-    public function parser_returns_empty_array_for_empty_option(): void
-    {
+    it('returns an empty array for an empty option', function () {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, '');
 
-        $this->assertSame([], SettingsPage::getMandatoryPlugins());
-    }
+        expect(SettingsPage::getMandatoryPlugins())->toBe([]);
+    });
+});
 
-    // ── drop-table option ─────────────────────────────────────────────
-    #[Test]
-    public function should_drop_table_is_false_unless_explicitly_opted_in(): void
-    {
-        $this->assertFalse(SettingsPage::shouldDropTable());
+// ── drop-table option ─────────────────────────────────────────────
+it('does not drop the table unless explicitly opted in', function () {
+    expect(SettingsPage::shouldDropTable())->toBeFalse();
 
-        $this->setOption(SettingsPage::OPTION_DROP_TABLE, '1');
-        $this->assertTrue(SettingsPage::shouldDropTable());
+    $this->setOption(SettingsPage::OPTION_DROP_TABLE, '1');
+    expect(SettingsPage::shouldDropTable())->toBeTrue();
 
-        $this->setOption(SettingsPage::OPTION_DROP_TABLE, '');
-        $this->assertFalse(SettingsPage::shouldDropTable());
-    }
+    $this->setOption(SettingsPage::OPTION_DROP_TABLE, '');
+    expect(SettingsPage::shouldDropTable())->toBeFalse();
+});
 
-    // ── field renderers ───────────────────────────────────────────────
-    #[Test]
-    public function section_descriptions_render(): void
-    {
+// ── field renderers ───────────────────────────────────────────────
+describe('field renderers', function () {
+    it('renders the section descriptions', function () {
         $monitored = $this->capture([SettingsPage::class, 'renderMonitoredPluginsSectionDescription']);
         $uninstall = $this->capture([SettingsPage::class, 'renderUninstallSectionDescription']);
 
-        $this->assertStringContainsString('folder/file.php|Label', $monitored);
-        $this->assertStringContainsString('class="description"', $uninstall);
-    }
+        expect($monitored)->toContain('folder/file.php|Label')
+            ->and($uninstall)->toContain('class="description"');
+    });
 
-    #[Test]
-    public function plugin_list_fields_render_the_stored_value(): void
-    {
+    it('renders the stored value in the plugin list fields', function () {
         $this->setOption(SettingsPage::OPTION_MANDATORY_PLUGINS, 'stored/mandatory.php|M');
         $this->setOption(SettingsPage::OPTION_OPTIONAL_PLUGINS, 'stored/optional.php|O');
 
         $mandatory = $this->capture([SettingsPage::class, 'renderMandatoryPluginsField']);
         $optional  = $this->capture([SettingsPage::class, 'renderOptionalPluginsField']);
 
-        $this->assertStringContainsString('stored/mandatory.php|M', $mandatory);
-        $this->assertStringContainsString('<textarea', $mandatory);
-        $this->assertStringContainsString('stored/optional.php|O', $optional);
-    }
+        expect($mandatory)->toContain('stored/mandatory.php|M')
+            ->toContain('<textarea')
+            ->and($optional)->toContain('stored/optional.php|O');
+    });
 
-    #[Test]
-    public function drop_table_field_renders_a_checkbox(): void
-    {
+    it('renders the drop-table field as a checkbox', function () {
         $html = $this->capture([SettingsPage::class, 'renderDropTableField']);
 
-        $this->assertStringContainsString('type="checkbox"', $html);
-        $this->assertStringContainsString(SettingsPage::OPTION_DROP_TABLE, $html);
-    }
+        expect($html)->toContain('type="checkbox"')
+            ->toContain(SettingsPage::OPTION_DROP_TABLE);
+    });
+});
 
-    // ── wp-config.php location ────────────────────────────────────────
-    #[Test]
-    public function wp_config_path_finds_the_file_in_abspath(): void
-    {
+// ── wp-config.php location ────────────────────────────────────────
+describe('wp-config.php location', function () {
+    it('finds the file in ABSPATH', function () {
         $path = $this->writeWpConfig();
 
-        $this->assertSame($path, SettingsPage::wpConfigPath());
-        $this->assertTrue(SettingsPage::isWpConfigWritable());
-    }
+        expect(SettingsPage::wpConfigPath())->toBe($path)
+            ->and(SettingsPage::isWpConfigWritable())->toBeTrue();
+    });
 
-    #[Test]
-    public function wp_config_path_is_null_when_no_file_exists(): void
-    {
+    it('is null when no file exists', function () {
         $this->removeWpConfig();
 
         // ABSPATH's parent is the system temp dir; only assert the negative
@@ -257,55 +216,49 @@ final class SettingsPageTest extends AdminTestCase
             $this->markTestSkipped('A wp-config.php exists above ABSPATH on this machine.');
         }
 
-        $this->assertNull(SettingsPage::wpConfigPath());
-        $this->assertFalse(SettingsPage::isWpConfigWritable());
-    }
+        expect(SettingsPage::wpConfigPath())->toBeNull()
+            ->and(SettingsPage::isWpConfigWritable())->toBeFalse();
+    });
+});
 
-    // ── wp-config.php constant writing ────────────────────────────────
-    #[Test]
-    public function setting_a_constant_inserts_the_marker_and_define(): void
-    {
+// ── wp-config.php constant writing ────────────────────────────────
+describe('setWpConfigConstant', function () {
+    it('inserts the marker and the define', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
 
-        $this->assertTrue(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'warning'));
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'warning'))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString('/* Sentinel Logger Configuration */', $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'warning' );", $config);
-        // The original contents survive the rewrite.
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->toContain('/* Sentinel Logger Configuration */')
+            ->toContain("define( 'SENTINEL_LOG_LEVEL', 'warning' );")
+            // The original contents survive the rewrite.
+            ->toContain("\$table_prefix = 'wp_';");
+    });
 
-    #[Test]
-    public function setting_an_existing_constant_replaces_it_in_place(): void
-    {
+    it('replaces an existing constant in place', function () {
         $this->writeWpConfig("<?php\ndefine( 'SENTINEL_LOG_LEVEL', 'debug' );\n");
 
-        $this->assertTrue(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'error'));
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'error'))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'error' );", $config);
-        $this->assertStringNotContainsString("'debug'", $config);
-        // Replacement, not duplication.
-        $this->assertSame(1, substr_count($config, 'SENTINEL_LOG_LEVEL'));
-    }
+        expect($config)->toContain("define( 'SENTINEL_LOG_LEVEL', 'error' );")
+            ->not->toContain("'debug'")
+            // Replacement, not duplication.
+            ->and(substr_count($config, 'SENTINEL_LOG_LEVEL'))->toBe(1);
+    });
 
-    #[Test]
-    public function setting_a_constant_appends_below_an_existing_marker(): void
-    {
+    it('appends below an existing marker', function () {
         $this->writeWpConfig("<?php\n/* Sentinel Logger Configuration */\ndefine( 'SENTINEL_LOG_LEVEL', 'debug' );\n");
 
-        $this->assertTrue(SettingsPage::setWpConfigConstant('SENTINEL_LOG_MAX_ROWS', 25000));
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_MAX_ROWS', 25000))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_MAX_ROWS', 25000 );", $config);
-        // Only one marker — it was reused, not re-added.
-        $this->assertSame(1, substr_count($config, '/* Sentinel Logger Configuration */'));
-    }
+        expect($config)->toContain("define( 'SENTINEL_LOG_MAX_ROWS', 25000 );")
+            // Only one marker — it was reused, not re-added.
+            ->and(substr_count($config, '/* Sentinel Logger Configuration */'))->toBe(1);
+    });
 
-    #[Test]
-    public function values_are_formatted_by_php_type(): void
-    {
+    it('formats values by PHP type', function () {
         $this->writeWpConfig();
 
         SettingsPage::setWpConfigConstant('SENTINEL_LOG_ENABLED', true);
@@ -314,97 +267,84 @@ final class SettingsPageTest extends AdminTestCase
         SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', "it's odd");
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_ENABLED', true );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_CAPTURE_ERRORS', false );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );", $config);
-        // Quotes in a string value are escaped rather than breaking the file.
-        $this->assertStringContainsString("it\\'s odd", $config);
-    }
+        expect($config)->toContain("define( 'SENTINEL_LOG_ENABLED', true );")
+            ->toContain("define( 'SENTINEL_CAPTURE_ERRORS', false );")
+            ->toContain("define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );")
+            // Quotes in a string value are escaped rather than breaking the file.
+            ->toContain("it\\'s odd");
+    });
 
-    #[Test]
-    public function setting_a_constant_fails_when_there_is_no_wp_config(): void
-    {
+    it('fails when there is no wp-config', function () {
         $this->removeWpConfig();
 
         if (file_exists(dirname(ABSPATH) . '/wp-config.php')) {
             $this->markTestSkipped('A wp-config.php exists above ABSPATH on this machine.');
         }
 
-        $this->assertFalse(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'warning'));
-        $this->assertFalse(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'));
-    }
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'warning'))->toBeFalse()
+            ->and(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'))->toBeFalse();
+    });
 
-    #[Test]
-    public function a_config_without_an_opening_tag_still_gets_the_block(): void
-    {
+    it('still gives a config without an opening tag the block', function () {
         $this->writeWpConfig("no php tag here\n");
 
-        $this->assertTrue(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'notice'));
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'notice'))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringStartsWith('<?php', $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'notice' );", $config);
-    }
+        expect($config)->toStartWith('<?php')
+            ->toContain("define( 'SENTINEL_LOG_LEVEL', 'notice' );");
+    });
 
-    #[Test]
-    public function a_single_line_config_appends_the_block_at_the_end(): void
-    {
+    it('appends the block at the end of a single-line config', function () {
         // No newline after the opening tag, so there is no end-of-line to
         // insert after and the block is appended instead.
         $this->writeWpConfig('<?php');
 
-        $this->assertTrue(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'alert'));
+        expect(SettingsPage::setWpConfigConstant('SENTINEL_LOG_LEVEL', 'alert'))->toBeTrue()
+            ->and($this->readWpConfig())->toContain("define( 'SENTINEL_LOG_LEVEL', 'alert' );");
+    });
+});
 
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'alert' );", $this->readWpConfig());
-    }
-
-    // ── wp-config.php constant removal ────────────────────────────────
-    #[Test]
-    public function removing_a_constant_deletes_the_line_and_the_orphaned_marker(): void
-    {
+// ── wp-config.php constant removal ────────────────────────────────
+describe('removing constants', function () {
+    it('deletes the line and the orphaned marker', function () {
         $this->writeWpConfig(
             "<?php\n/* Sentinel Logger Configuration */\ndefine( 'SENTINEL_LOG_LEVEL', 'debug' );\n\$table_prefix = 'wp_';\n"
         );
 
-        $this->assertTrue(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'));
+        expect(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringNotContainsString('SENTINEL_LOG_LEVEL', $config);
-        // Last Sentinel constant gone, so the marker goes too.
-        $this->assertStringNotContainsString('/* Sentinel Logger Configuration */', $config);
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->not->toContain('SENTINEL_LOG_LEVEL')
+            // Last Sentinel constant gone, so the marker goes too.
+            ->not->toContain('/* Sentinel Logger Configuration */')
+            ->toContain("\$table_prefix = 'wp_';");
+    });
 
-    #[Test]
-    public function removing_a_constant_keeps_the_marker_while_others_remain(): void
-    {
+    it('keeps the marker while others remain', function () {
         $this->writeWpConfig(
             "<?php\n/* Sentinel Logger Configuration */\n"
             . "define( 'SENTINEL_LOG_LEVEL', 'debug' );\n"
             . "define( 'SENTINEL_LOG_MAX_ROWS', 10000 );\n"
         );
 
-        $this->assertTrue(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'));
+        expect(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'))->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringNotContainsString('SENTINEL_LOG_LEVEL', $config);
-        $this->assertStringContainsString('SENTINEL_LOG_MAX_ROWS', $config);
-        $this->assertStringContainsString('/* Sentinel Logger Configuration */', $config);
-    }
+        expect($config)->not->toContain('SENTINEL_LOG_LEVEL')
+            ->toContain('SENTINEL_LOG_MAX_ROWS')
+            ->toContain('/* Sentinel Logger Configuration */');
+    });
 
-    #[Test]
-    public function removing_an_absent_constant_is_a_successful_no_op(): void
-    {
+    it('treats removing an absent constant as a successful no-op', function () {
         $this->writeWpConfig("<?php\n\$table_prefix = 'wp_';\n");
         $before = $this->readWpConfig();
 
-        $this->assertTrue(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'));
-        $this->assertSame($before, $this->readWpConfig(), 'File untouched when nothing matched.');
-    }
+        expect(SettingsPage::removeWpConfigConstant('SENTINEL_LOG_LEVEL'))->toBeTrue()
+            ->and($this->readWpConfig())->toBe($before, 'File untouched when nothing matched.');
+    });
 
-    #[Test]
-    public function remove_all_clears_every_sentinel_constant(): void
-    {
+    it('clears every Sentinel constant with removeAll', function () {
         $this->writeWpConfig(
             "<?php\n/* Sentinel Logger Configuration */\n"
             . "define( 'SENTINEL_LOG_ENABLED', true );\n"
@@ -415,27 +355,24 @@ final class SettingsPageTest extends AdminTestCase
             . "\$table_prefix = 'wp_';\n"
         );
 
-        $this->assertTrue(SettingsPage::removeAllWpConfigConstants());
+        expect(SettingsPage::removeAllWpConfigConstants())->toBeTrue();
 
         $config = $this->readWpConfig();
-        $this->assertStringNotContainsString('SENTINEL_', $config);
-        $this->assertStringContainsString("\$table_prefix = 'wp_';", $config);
-    }
+        expect($config)->not->toContain('SENTINEL_')
+            ->toContain("\$table_prefix = 'wp_';");
+    });
+});
 
-    // ── logger config save handler ────────────────────────────────────
-    #[Test]
-    public function save_handler_ignores_requests_without_its_nonce_field(): void
-    {
+// ── logger config save handler ────────────────────────────────────
+describe('logger config save handler', function () {
+    // returned early without touching wp-config.php
+    it('ignores requests without its nonce field', function () {
         $_POST = [];
 
         SettingsPage::handleLoggerConfigSave();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'returned early without touching wp-config.php');
-    }
-
-    #[Test]
-    public function save_handler_writes_every_constant(): void
-    {
+    it('writes every constant', function () {
         $this->writeWpConfig();
         $_POST = [
             '_sentinel_logger_nonce'    => 'n',
@@ -449,18 +386,16 @@ final class SettingsPageTest extends AdminTestCase
         SettingsPage::handleLoggerConfigSave();
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_ENABLED', true );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'warning' );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_MAX_ROWS', 25000 );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_CAPTURE_ERRORS', true );", $config);
+        expect($config)->toContain("define( 'SENTINEL_LOG_ENABLED', true );")
+            ->toContain("define( 'SENTINEL_LOG_LEVEL', 'warning' );")
+            ->toContain("define( 'SENTINEL_LOG_MAX_ROWS', 25000 );")
+            ->toContain("define( 'SENTINEL_LOG_BUFFER_SIZE', 100 );")
+            ->toContain("define( 'SENTINEL_CAPTURE_ERRORS', true );");
 
         $_POST = [];
-    }
+    });
 
-    #[Test]
-    public function save_handler_rejects_an_unknown_level_and_clamps_numbers(): void
-    {
+    it('rejects an unknown level and clamps numbers', function () {
         $this->writeWpConfig();
         $_POST = [
             '_sentinel_logger_nonce'   => 'n',
@@ -472,19 +407,18 @@ final class SettingsPageTest extends AdminTestCase
         SettingsPage::handleLoggerConfigSave();
 
         $config = $this->readWpConfig();
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_LEVEL', 'debug' );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_MAX_ROWS', 100 );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_BUFFER_SIZE', 500 );", $config);
-        // Unchecked checkboxes save as false.
-        $this->assertStringContainsString("define( 'SENTINEL_LOG_ENABLED', false );", $config);
-        $this->assertStringContainsString("define( 'SENTINEL_CAPTURE_ERRORS', false );", $config);
+        expect($config)->toContain("define( 'SENTINEL_LOG_LEVEL', 'debug' );")
+            ->toContain("define( 'SENTINEL_LOG_MAX_ROWS', 100 );")
+            ->toContain("define( 'SENTINEL_LOG_BUFFER_SIZE', 500 );")
+            // Unchecked checkboxes save as false.
+            ->toContain("define( 'SENTINEL_LOG_ENABLED', false );")
+            ->toContain("define( 'SENTINEL_CAPTURE_ERRORS', false );");
 
         $_POST = [];
-    }
+    });
 
-    #[Test]
-    public function save_handler_reports_when_wp_config_is_missing(): void
-    {
+    // not-writable branch reported via add_settings_error
+    it('reports when wp-config is missing', function () {
         $this->removeWpConfig();
 
         if (file_exists(dirname(ABSPATH) . '/wp-config.php')) {
@@ -493,36 +427,32 @@ final class SettingsPageTest extends AdminTestCase
 
         $_POST = ['_sentinel_logger_nonce' => 'n'];
 
-        SettingsPage::handleLoggerConfigSave();
+        try {
+            SettingsPage::handleLoggerConfigSave();
+        } finally {
+            $_POST = [];
+        }
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'not-writable branch reported via add_settings_error');
-
-        $_POST = [];
-    }
-
-    // ── page rendering ────────────────────────────────────────────────
-    #[Test]
-    public function render_page_outputs_the_settings_screen(): void
-    {
+// ── page rendering ────────────────────────────────────────────────
+describe('renderPage', function () {
+    it('outputs the settings screen', function () {
         $this->writeWpConfig();
 
         $html = $this->capture([SettingsPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('Sentinel Settings', $html);
-        $this->assertStringContainsString('<form', $html);
-        // The logger constants table is built from getLoggingConfig().
-        $this->assertStringContainsString('SENTINEL_LOG_LEVEL', $html);
-        $this->assertStringContainsString('SENTINEL_LOG_MAX_ROWS', $html);
-        $this->assertStringContainsString('SENTINEL_CAPTURE_ERRORS', $html);
-    }
+        expect($html)->toContain('Sentinel Settings')
+            ->toContain('<form')
+            // The logger constants table is built from getLoggingConfig().
+            ->toContain('SENTINEL_LOG_LEVEL')
+            ->toContain('SENTINEL_LOG_MAX_ROWS')
+            ->toContain('SENTINEL_CAPTURE_ERRORS');
+    });
 
-    #[Test]
-    public function render_page_refuses_users_without_the_capability(): void
-    {
+    it('refuses users without the capability', function () {
         $this->denyCapability();
 
-        $this->expectException(WpDieException::class);
-
         SettingsPage::renderPage();
-    }
-}
+    })->throws(WpDieException::class);
+});

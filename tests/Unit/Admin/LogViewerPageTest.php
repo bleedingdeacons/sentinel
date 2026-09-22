@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Admin;
 
-use PHPUnit\Framework\Attributes\Test;
 use Sentinel\Admin\LogViewerPage;
-use Sentinel\Tests\AdminTestCase;
 use BleedingDeacons\WpMocks\Exceptions\JsonResponseException;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use stdClass;
 
-/**
+/*
  * Tests for the log viewer page.
  *
  * The page aggregates the log table by channel and level, then finds the
@@ -23,124 +21,104 @@ use stdClass;
  * handleClearAction()'s success path ends in exit(), which would take the
  * test runner down with it, so only its guard branches are exercised here.
  */
-final class LogViewerPageTest extends AdminTestCase
+
+/**
+ * Make the stubbed $wpdb report a populated log table.
+ *
+ * One row object serves both the GROUP BY query and the "latest row"
+ * lookup, so it carries the columns each of them reads.
+ */
+function seedLogViewerTable(int $totalRows = 3): void
 {
-    /**
-     * Make the stubbed $wpdb report a populated log table.
-     *
-     * One row object serves both the GROUP BY query and the "latest row"
-     * lookup, so it carries the columns each of them reads.
-     */
-    private function seedLogTable(int $totalRows = 3): void
-    {
-        global $wpdb;
+    global $wpdb;
 
-        $wpdb->existingTable = \Sentinel_Logger::tableName();
-        $wpdb->varReturn     = (string) $totalRows;
+    $wpdb->existingTable = \Sentinel_Logger::tableName();
+    $wpdb->varReturn     = (string) $totalRows;
 
-        $row = new stdClass();
-        $row->channel    = 'scrutiny';
-        $row->level      = 'error';
-        $row->cnt        = $totalRows;
-        $row->first_seen = '2026-07-20 09:00:00';
-        $row->last_seen  = '2026-07-23 17:00:00';
-        $row->message    = 'Something went wrong';
-        $row->context    = '{"key":"value"}';
+    $row = new stdClass();
+    $row->channel    = 'scrutiny';
+    $row->level      = 'error';
+    $row->cnt        = $totalRows;
+    $row->first_seen = '2026-07-20 09:00:00';
+    $row->last_seen  = '2026-07-23 17:00:00';
+    $row->message    = 'Something went wrong';
+    $row->context    = '{"key":"value"}';
 
-        $wpdb->rows = [$row];
-    }
+    $wpdb->rows = [$row];
+}
 
-    /** Reset the shared $wpdb double between tests. */
-    protected function tearDown(): void
-    {
-        global $wpdb;
-        $wpdb->existingTable = '';
-        $wpdb->varReturn     = '0';
-        $wpdb->rows          = [];
-        $_POST = [];
-        $_GET  = [];
+// Reset the shared $wpdb double between tests.
+afterEach(function () {
+    global $wpdb;
+    $wpdb->existingTable = '';
+    $wpdb->varReturn     = '0';
+    $wpdb->rows          = [];
+    $_POST = [];
+    $_GET  = [];
+});
 
-        parent::tearDown();
-    }
-
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function init_and_register_page_run_without_error(): void
-    {
+// ── registration ──────────────────────────────────────────────────
+describe('registration', function () {
+    // registration completed
+    it('runs init and registerPage without error', function () {
         LogViewerPage::init();
         LogViewerPage::registerPage();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'registration completed');
-    }
-
-    #[Test]
-    public function assets_load_only_on_the_log_viewer_screen(): void
-    {
+    // enqueue guarded by hook suffix
+    it('loads assets only on the log viewer screen', function () {
         LogViewerPage::enqueueAssets('some-other-page');
         LogViewerPage::registerPage();
         LogViewerPage::enqueueAssets($this->submenuHook('sentinel-logs'));
+    })->throwsNoExceptions();
+});
 
-        $this->assertTrue(true, 'enqueue guarded by hook suffix');
-    }
-
-    // ── clear action guards ───────────────────────────────────────────
-    #[Test]
-    public function clear_action_ignores_requests_without_its_post_field(): void
-    {
+// ── clear action guards ───────────────────────────────────────────
+describe('clear action guards', function () {
+    // returned before touching the table
+    it('ignores requests without its POST field', function () {
         $_POST = [];
 
         LogViewerPage::handleClearAction();
+    })->throwsNoExceptions();
 
-        $this->assertTrue(true, 'returned before touching the table');
-    }
-
-    #[Test]
-    public function clear_action_refuses_users_without_the_capability(): void
-    {
+    it('refuses users without the capability', function () {
         $this->denyCapability();
         $_POST = ['sentinel_clear_log' => '1'];
 
-        $this->expectException(WpDieException::class);
-
         LogViewerPage::handleClearAction();
-    }
+    })->throws(WpDieException::class);
+});
 
-    // ── aggregate table rendering ─────────────────────────────────────
-    #[Test]
-    public function aggregate_table_explains_itself_when_the_table_is_absent(): void
-    {
+// ── aggregate table rendering ─────────────────────────────────────
+describe('aggregate table', function () {
+    it('explains itself when the table is absent', function () {
         $html = $this->capture([LogViewerPage::class, 'renderAggregateTable']);
 
-        $this->assertNotSame('', trim($html), 'An empty state is still rendered.');
-    }
+        expect(trim($html))->not->toBe('', 'An empty state is still rendered.');
+    });
 
-    #[Test]
-    public function aggregate_table_handles_a_table_that_exists_but_is_empty(): void
-    {
+    it('handles a table that exists but is empty', function () {
         global $wpdb;
         $wpdb->existingTable = \Sentinel_Logger::tableName();
         $wpdb->varReturn     = '0'; // COUNT(*) === 0
 
         $html = $this->capture([LogViewerPage::class, 'renderAggregateTable']);
 
-        $this->assertNotSame('', trim($html));
-    }
+        expect(trim($html))->not->toBe('');
+    });
 
-    #[Test]
-    public function aggregate_table_lists_channel_level_and_latest_message(): void
-    {
-        $this->seedLogTable();
+    it('lists channel, level and latest message', function () {
+        seedLogViewerTable();
 
         $html = $this->capture([LogViewerPage::class, 'renderAggregateTable']);
 
-        $this->assertStringContainsString('scrutiny', $html);
-        $this->assertStringContainsString('error', $html);
-        $this->assertStringContainsString('Something went wrong', $html);
-    }
+        expect($html)->toContain('scrutiny')
+            ->toContain('error')
+            ->toContain('Something went wrong');
+    });
 
-    #[Test]
-    public function aggregate_table_copes_when_the_group_query_returns_nothing(): void
-    {
+    it('copes when the group query returns nothing', function () {
         global $wpdb;
         // Non-zero count, but the GROUP BY comes back empty — a race between
         // the two queries, or a table truncated mid-request.
@@ -150,74 +128,62 @@ final class LogViewerPageTest extends AdminTestCase
 
         $html = $this->capture([LogViewerPage::class, 'renderAggregateTable']);
 
-        $this->assertNotSame('', trim($html));
-    }
+        expect(trim($html))->not->toBe('');
+    });
+});
 
-    // ── page rendering ────────────────────────────────────────────────
-    #[Test]
-    public function render_page_shows_the_empty_state_with_no_table(): void
-    {
+// ── page rendering ────────────────────────────────────────────────
+describe('renderPage', function () {
+    it('shows the empty state with no table', function () {
         $html = $this->capture([LogViewerPage::class, 'renderPage']);
 
-        $this->assertNotSame('', trim($html));
-    }
+        expect(trim($html))->not->toBe('');
+    });
 
-    #[Test]
-    public function render_page_shows_aggregated_rows_when_the_table_has_data(): void
-    {
-        $this->seedLogTable();
+    it('shows aggregated rows when the table has data', function () {
+        seedLogViewerTable();
 
         $html = $this->capture([LogViewerPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('scrutiny', $html);
-        $this->assertStringContainsString('Something went wrong', $html);
-    }
+        expect($html)->toContain('scrutiny')
+            ->toContain('Something went wrong');
+    });
 
-    #[Test]
-    public function render_page_confirms_a_completed_clear(): void
-    {
+    it('confirms a completed clear', function () {
         $_GET = ['cleared' => '1'];
 
         $html = $this->capture([LogViewerPage::class, 'renderPage']);
 
-        $this->assertStringContainsString('cleared', strtolower($html));
-    }
+        expect(strtolower($html))->toContain('cleared');
+    });
 
-    #[Test]
-    public function render_page_refuses_users_without_the_capability(): void
-    {
+    it('refuses users without the capability', function () {
         $this->denyCapability();
-
-        $this->expectException(WpDieException::class);
 
         LogViewerPage::renderPage();
-    }
+    })->throws(WpDieException::class);
+});
 
-    // ── ajax ──────────────────────────────────────────────────────────
-    #[Test]
-    public function ajax_refresh_returns_the_aggregate_table_html(): void
-    {
-        $this->seedLogTable();
+// ── ajax ──────────────────────────────────────────────────────────
+describe('ajaxRefresh', function () {
+    // wp_send_json_success short-circuits with a JsonResponseException.
+    it('returns the aggregate table html', function () {
+        seedLogViewerTable();
 
-        try {
-            LogViewerPage::ajaxRefresh();
-            $this->fail('Expected wp_send_json_success to short-circuit.');
-        } catch (JsonResponseException $e) {
-            $this->assertTrue($e->success);
-            $this->assertStringContainsString('scrutiny', $e->data['html']);
-        }
-    }
+        expect(fn () => LogViewerPage::ajaxRefresh())
+            ->toThrow(function (JsonResponseException $e) {
+                expect($e->success)->toBeTrue()
+                    ->and($e->data['html'])->toContain('scrutiny');
+            });
+    });
 
-    #[Test]
-    public function ajax_refresh_is_refused_without_the_capability(): void
-    {
+    // wp_send_json_error short-circuits with a JsonResponseException.
+    it('is refused without the capability', function () {
         $this->denyCapability();
 
-        try {
-            LogViewerPage::ajaxRefresh();
-            $this->fail('Expected wp_send_json_error to short-circuit.');
-        } catch (JsonResponseException $e) {
-            $this->assertFalse($e->success);
-        }
-    }
-}
+        expect(fn () => LogViewerPage::ajaxRefresh())
+            ->toThrow(function (JsonResponseException $e) {
+                expect($e->success)->toBeFalse();
+            });
+    });
+});

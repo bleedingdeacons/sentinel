@@ -4,112 +4,88 @@ declare(strict_types=1);
 
 namespace Sentinel\Tests\Unit\Logger;
 
-use PHPUnit\Framework\Attributes\Test;
-use BleedingDeacons\WpMocks\TestCase;
 use Sentinel\Logger\LoggerManager;
 
-/**
+/*
  * Tests for LoggerManager filesystem operations.
  *
  * Uses a temporary directory for WPMU_PLUGIN_DIR to avoid touching
  * real WordPress installations. The source file path points to the
  * actual bundled sentinel-logger.php.
  *
- * Extends the shared wp-mocks TestCase rather than Sentinel's own, which would
- * load the logger singleton these purely filesystem-shaped assertions have no
- * use for.
+ * Runs on the shared wp-mocks TestCase rather than Sentinel's own (see
+ * tests/Pest.php), which would load the logger singleton these purely
+ * filesystem-shaped assertions have no use for.
  */
-class LoggerManagerTest extends TestCase
-{
-    private string $tempMuDir;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    // Create a temp directory to act as mu-plugins
+    $this->tempMuDir = sys_get_temp_dir() . '/sentinel-test-mu-' . uniqid();
+    mkdir($this->tempMuDir, 0755, true);
 
-        // Create a temp directory to act as mu-plugins
-        $this->tempMuDir = sys_get_temp_dir() . '/sentinel-test-mu-' . uniqid();
-        mkdir($this->tempMuDir, 0755, true);
+    // WPMU_PLUGIN_DIR is already defined in bootstrap, but LoggerManager
+    // uses the constant directly. We test the static helpers that are
+    // purely filesystem-based.
+});
 
-        // WPMU_PLUGIN_DIR is already defined in bootstrap, but LoggerManager
-        // uses the constant directly. We test the static helpers that are
-        // purely filesystem-based.
-    }
-
-    protected function tearDown(): void
-    {
-        // Clean up temp directory
-        $files = glob($this->tempMuDir . '/*');
-        if ($files) {
-            foreach ($files as $file) {
-                unlink($file);
-            }
+afterEach(function () {
+    // Clean up temp directory
+    $files = glob($this->tempMuDir . '/*');
+    if ($files) {
+        foreach ($files as $file) {
+            unlink($file);
         }
-        if (is_dir($this->tempMuDir)) {
-            rmdir($this->tempMuDir);
-        }
-
-        parent::tearDown();
     }
+    if (is_dir($this->tempMuDir)) {
+        rmdir($this->tempMuDir);
+    }
+});
 
-    // ── sourcePath ──────────────────────────────────────────────────
-    #[Test]
-    public function sourcePath_points_to_logger_file_in_plugin_dir(): void
-    {
+// ── sourcePath ──────────────────────────────────────────────────
+describe('sourcePath', function () {
+    it('points to the logger file in the plugin dir', function () {
         $path = LoggerManager::sourcePath();
 
-        $this->assertStringEndsWith('src/Logger/sentinel-logger.php', $path);
-        $this->assertStringStartsWith(SENTINEL_PLUGIN_DIR, $path);
-    }
+        expect($path)->toEndWith('src/Logger/sentinel-logger.php')
+            ->toStartWith(SENTINEL_PLUGIN_DIR);
+    });
 
-    #[Test]
-    public function sourcePath_file_actually_exists(): void
-    {
-        $this->assertFileExists(LoggerManager::sourcePath());
-    }
+    it('names a file that actually exists', function () {
+        expect(LoggerManager::sourcePath())->toBeFile();
+    });
+});
 
-    // ── destinationPath ─────────────────────────────────────────────
-    #[Test]
-    public function destinationPath_points_to_mu_plugins(): void
-    {
-        $path = LoggerManager::destinationPath();
+// ── destinationPath ─────────────────────────────────────────────
+it('points destinationPath to mu-plugins', function () {
+    $path = LoggerManager::destinationPath();
 
-        $this->assertStringEndsWith('sentinel-logger.php', $path);
-        $this->assertStringStartsWith(WPMU_PLUGIN_DIR, $path);
-    }
+    expect($path)->toEndWith('sentinel-logger.php')
+        ->toStartWith(WPMU_PLUGIN_DIR);
+});
 
-    // ── isDeployed ──────────────────────────────────────────────────
-    #[Test]
-    public function isDeployed_returns_false_when_file_missing(): void
-    {
-        // The temp WPMU_PLUGIN_DIR won't have the file
-        // But isDeployed checks the real WPMU_PLUGIN_DIR constant.
-        // We can at least verify the method returns a boolean.
-        $result = LoggerManager::isDeployed();
+// ── isDeployed ──────────────────────────────────────────────────
+it('returns a boolean from isDeployed when the file is missing', function () {
+    // The temp WPMU_PLUGIN_DIR won't have the file
+    // But isDeployed checks the real WPMU_PLUGIN_DIR constant.
+    // We can at least verify the method returns a boolean.
+    $result = LoggerManager::isDeployed();
 
-        $this->assertIsBool($result);
-    }
+    expect($result)->toBeBool();
+});
 
-    // ── isCurrentVersion ────────────────────────────────────────────
-    #[Test]
-    public function isCurrentVersion_returns_false_when_dest_missing(): void
-    {
-        // When destination doesn't exist, versions can't match
-        // This test validates the guard clause
-        $result = LoggerManager::isCurrentVersion();
+// ── isCurrentVersion ────────────────────────────────────────────
+it('returns a boolean from isCurrentVersion when the destination is missing', function () {
+    // When destination doesn't exist, versions can't match
+    // This test validates the guard clause
+    $result = LoggerManager::isCurrentVersion();
 
-        // If the file happens to be deployed (e.g. in a real WP env),
-        // it might return true, but we can verify it returns a boolean
-        $this->assertIsBool($result);
-    }
+    // If the file happens to be deployed (e.g. in a real WP env),
+    // it might return true, but we can verify it returns a boolean
+    expect($result)->toBeBool();
+});
 
-    // ── Legacy removal ──────────────────────────────────────────────
-    #[Test]
-    public function removeLegacy_does_not_error_when_no_legacy_files_exist(): void
-    {
-        // Should be a no-op with no exceptions
-        LoggerManager::removeLegacy();
-
-        $this->assertTrue(true, 'removeLegacy completed without error');
-    }
-}
+// ── Legacy removal ──────────────────────────────────────────────
+it('does not error in removeLegacy when no legacy files exist', function () {
+    // Should be a no-op with no exceptions
+    LoggerManager::removeLegacy();
+})->throwsNoExceptions();
