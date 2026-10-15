@@ -21,7 +21,8 @@ Sentinel adds a WordPress admin dashboard widget that monitors the health of the
 
 * **Plugin status dashboard** — a single widget on the WordPress admin dashboard showing version and activation status for every monitored Intergroup plugin.
 * **Automatic refresh** — the widget updates via AJAX whenever a monitored plugin fires its `loaded` action or is activated/deactivated, without requiring a full page reload.
-* **No dependencies** — Sentinel has no plugin dependencies; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
+* **No dependencies** — the dashboard and logger need no other plugin; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
+* **Monitor** — the server side of the Monitor app: handset sign-in, sealed push alerts, acknowledgement and messaging under `sentinel/v1`. Optional; needs Unity and Scrutiny.
 * **Lightweight** — minimal footprint; a single dashboard widget class with bundled CSS and JS.
 
 == Installation ==

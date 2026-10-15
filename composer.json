@@ -1,6 +1,6 @@
 {
     "name": "bleeding-deacons/sentinel",
-    "description": "Dashboard monitoring widget for the Integrity REST API bridge plugin",
+    "description": "Status dashboard and shared logger for the Bleeding Deacons suite, and the server side of the Monitor app.",
     "type": "wordpress-plugin",
     "license": "MIT (Modified)",
     "authors": [
@@ -12,12 +12,19 @@
     "repositories": [
         {
             "type": "vcs",
+            "url": "https://github.com/bleedingdeacons/guardian"
+        },
+        {
+            "type": "vcs",
             "url": "https://github.com/bleedingdeacons/wp-mocks"
         }
     ],
     "require": {
         "php": ">=8.4",
-        "ext-json": "*"
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "bleedingdeacons/guardian": "^1.0"
     },
     "require-dev": {
         "bleedingdeacons/wp-mocks": "^3.0",
@@ -25,6 +32,7 @@
         "pestphp/pest": "^5.2",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^13.0",
+        "psr/container": "^2.0",
         "squizlabs/php_codesniffer": "^4.0",
         "szepeviktor/phpstan-wordpress": "^2.0"
     },

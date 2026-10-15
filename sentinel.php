@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name: Sentinel
- * Description: Dashboard displaying the Intergroup plugin(s) status.
+ * Description: Dashboard displaying the Intergroup plugin(s) status, the suite's shared logger, and the server side of the Monitor app (optional; needs Unity and Scrutiny).
  * Version: 3.0.5
  * Build date: 2026/09/24 03:05:24
  * Requires at least: 6.0
@@ -35,6 +35,14 @@ $sentinel_plugin_data = get_plugin_data(__FILE__, false, false);
 define('SENTINEL_VERSION', $sentinel_plugin_data['Version']);
 define('SENTINEL_PLUGIN_DIR', $sentinel_plugin_dir);
 define('SENTINEL_PLUGIN_URL', $sentinel_plugin_url);
+
+// Composer's autoloader, when present. It supplies the Guardian library, which
+// the Monitor module signs handsets in with; the production build ships it in
+// vendor/. Nothing outside the Monitor module needs it.
+$sentinel_autoloader = SENTINEL_PLUGIN_DIR . 'vendor/autoload.php';
+if (file_exists($sentinel_autoloader)) {
+    require_once $sentinel_autoloader;
+}
 
 // Autoloader for Sentinel namespace
 spl_autoload_register(function ($class) {
@@ -96,6 +104,84 @@ add_action('plugins_loaded', function (): void {
         }
     }
 }, 5); // Priority 5: load early so hooks below can fire
+
+// The Monitor module: the server side of the Monitor app. Optional — it boots
+// only when Unity loads, and stands down without Scrutiny or the Guardian
+// library — so nothing above depends on it. See Sentinel\Monitor\Plugin.
+add_action('unity/loaded', function ($container): void {
+    try {
+        $reason = \Sentinel\Monitor\Plugin::standDownReason();
+        if ($reason !== null) {
+            if (is_admin() && !(defined('SENTINEL_MONITOR_KILL') && SENTINEL_MONITOR_KILL)) {
+                add_action('admin_notices', function () use ($reason): void {
+                    echo '<div class="notice notice-warning"><p><strong>Sentinel Monitor is not running:</strong> '
+                        . esc_html($reason) . '</p></div>';
+                });
+            }
+            return;
+        }
+
+        \Sentinel\Monitor\Plugin::init($container);
+
+        do_action('sentinel/monitor/loaded', \Sentinel\Monitor\Plugin::getContainer());
+    } catch (\Throwable $e) {
+        function_exists('wp_log')
+            ? wp_log('monitor')->error('Sentinel Monitor initialisation error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            : error_log('Sentinel Monitor initialisation error: ' . $e->getMessage());
+
+        if (is_admin()) {
+            add_action('admin_notices', function () use ($e): void {
+                echo '<div class="notice notice-error is-dismissible"><p><strong>Sentinel Monitor error:</strong> '
+                    . esc_html($e->getMessage()) . '</p></div>';
+            });
+        }
+    }
+}, 10);
+
+/**
+ * Raise an alert on the Monitor app's handsets.
+ *
+ * The Monitor module's public alerting API, moved from Reach's
+ * reach_send_alert():
+ *
+ *     $id = sentinel_monitor_send_alert([
+ *         'kind'      => 'shift_uncovered',
+ *         'source'    => 'trusted',
+ *         'title'     => 'Helpline shift uncovered',
+ *         'body'      => 'Tonight 22:00-08:00 has nobody signed up.',
+ *         'reference' => 'SHIFT-2026-08-15-N',
+ *         'priority'  => 'urgent',
+ *     ]);
+ *
+ * Only `kind` and `title` are required. See
+ * {@see \Sentinel\Monitor\Alerts\AlertApi} for the full argument list.
+ *
+ * <b>Never put personal data in an alert.</b> The text passes through
+ * Google's push infrastructure and onto a lock screen.
+ *
+ * Guarded so a caller can use function_exists() to degrade gracefully.
+ *
+ * @param array<string, mixed> $alert
+ * @return int|\WP_Error The stored alert's id, or why it was refused.
+ */
+if (!function_exists('sentinel_monitor_send_alert')) {
+    function sentinel_monitor_send_alert(array $alert): int|\WP_Error
+    {
+        try {
+            return \Sentinel\Monitor\Plugin::getContainer()
+                ->get(\Sentinel\Monitor\Alerts\AlertApi::class)
+                ->send($alert);
+        } catch (\Throwable $e) {
+            // An alert that could not be raised must never take the calling
+            // plugin down with it.
+            return new \WP_Error(
+                'sentinel_unavailable',
+                'Sentinel Monitor is not ready to accept alerts: ' . $e->getMessage(),
+                ['status' => 503],
+            );
+        }
+    }
+}
 
 // Keep the deployed logger in sync when Sentinel is updated.
 // Runs on every request type (admin, CLI, cron, front) so WP-CLI picks up changes.
@@ -238,4 +324,11 @@ register_activation_hook(__FILE__, function (): void {
 // Deactivation hook
 register_deactivation_hook(__FILE__, function (): void {
     flush_rewrite_rules();
+
+    // Stop the Monitor alert sweep. Enrolled handsets are deliberately left
+    // alone: deactivating is routinely how a site is upgraded, and making
+    // every handset sign in again is far too destructive an answer to a few
+    // seconds of downtime. Nothing authenticates while Sentinel is inactive
+    // anyway, because none of its routes are registered.
+    wp_clear_scheduled_hook(\Sentinel\Monitor\Plugin::ALERT_PURGE_CRON_HOOK);
 });

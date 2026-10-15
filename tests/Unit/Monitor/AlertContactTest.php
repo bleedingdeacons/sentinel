@@ -1,0 +1,276 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sentinel\Tests\Monitor;
+
+use Sentinel\Monitor\Alerts\AcknowledgementNotifier;
+use Sentinel\Monitor\Alerts\AlertApi;
+use Sentinel\Monitor\Alerts\AlertDispatcher;
+use Sentinel\Monitor\Alerts\AlertRequest;
+use Sentinel\Monitor\Alerts\RecipientResolver;
+use Sentinel\Monitor\Auth\DeviceTokenMinter;
+use Sentinel\Monitor\Core\Cipher;
+use Sentinel\Monitor\Core\RateLimiter;
+use Sentinel\Monitor\Devices\CurrentDevice;
+use Sentinel\Monitor\Devices\Device;
+use Sentinel\Monitor\Devices\ResponderGate;
+use Sentinel\Monitor\Rest\AlertController;
+use Sentinel\Tests\Monitor\Fixtures\InMemoryAlertContactRepository;
+use Sentinel\Tests\Monitor\Fixtures\InMemoryAlertReplyRepository;
+use Sentinel\Tests\Monitor\Fixtures\InMemoryAlertRepository;
+use Sentinel\Tests\Monitor\Fixtures\InMemoryDeviceRepository;
+use Sentinel\Tests\Monitor\Fixtures\MemberStub;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
+use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+
+/**
+ * Contact details attached to an alert.
+ *
+ * This is the only personal data in the alerting feature, and the rules
+ * around it are the point of the design rather than an implementation
+ * detail — so they are asserted rather than trusted to comments:
+ *
+ *  - the contact never appears in a poll response, only a flag saying
+ *    one exists;
+ *  - reading it requires an authenticated handset the alert could have
+ *    been sent to;
+ *  - every read writes a Scrutiny audit entry;
+ *  - it is encrypted at rest, and a rotated salt makes it unreadable.
+ */
+
+beforeEach(function () {
+    // --- helpers ----------------------------------------------------------
+    $this->controller = function (): AlertController {
+        $gate = ($this->gate)();
+        $dispatcher = new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []);
+        $members = new InMemoryMemberRepository(($this->members)());
+
+        return new AlertController(
+            $this->alerts,
+            $this->contacts,
+            new CurrentDevice($this->devices, $this->minter, $gate),
+            $this->audit,
+            $this->devices,
+            new AcknowledgementNotifier($this->alerts, $dispatcher),
+            $this->replies,
+            new RecipientResolver($this->devices, $members, new InMemoryCommitteeRepository()),
+            new AlertApi($dispatcher),
+            new RateLimiter(),
+        );
+    };
+
+    $this->gate = function (): ResponderGate {
+        return new ResponderGate(new InMemoryMemberRepository(($this->members)()));
+    };
+
+    /**
+     * A certified member behind every enrolled handset.
+     *
+     * Split out of {@see gate()} because the controller now needs the
+     * same set twice — once for the gate, once for the recipient
+     * resolver, which turns a chosen member id back into an address.
+     *
+     * @return array<int, MemberStub>
+     */
+    $this->members = function (): array {
+        $members = [];
+        foreach ($this->devices->devices as $device) {
+            $members[] = new MemberStub(
+                personalEmail: $device->memberEmail,
+                twelfthStepper: false,
+                telephoneResponder: true,
+                id: $device->id,
+                responderCertification: ResponderCertification::Certified,
+            );
+        }
+
+        return $members;
+    };
+
+    $this->enrol = function (string $email): string {
+        $token = $this->minter->mint();
+        $this->devices->create(
+            $this->minter->hash($token),
+            $email,
+            count($this->devices->devices) + 1,
+            'Phone',
+            'android',
+            Device::PUSH_FCM,
+            'fcm-' . $email,
+            time(),
+        );
+
+        return $token;
+    };
+
+    /** @param array<string, mixed> $args */
+    $this->request = function (array $args = []): AlertRequest {
+        $request = AlertRequest::fromArray($args + [
+            'kind'  => 'test',
+            'title' => 'Something happened',
+        ]);
+
+        $this->assertInstanceOf(AlertRequest::class, $request);
+
+        return $request;
+    };
+
+    /** @param array<string, mixed> $params */
+    $this->authed = function (string $token, array $params = []): WP_REST_Request {
+        $request = new WP_REST_Request($params);
+        $request->set_header('authorization', 'Bearer ' . $token);
+
+        return $request;
+    };
+
+    $this->devices = new InMemoryDeviceRepository();
+    $this->alerts = new InMemoryAlertRepository();
+    $this->contacts = new InMemoryAlertContactRepository();
+    $this->replies = new InMemoryAlertReplyRepository();
+    $this->minter = new DeviceTokenMinter();
+    $this->audit = new SpyAuditLogger();
+});
+
+test('dispatcher stores the contact away from the alert', function () {
+    $dispatcher = new AlertDispatcher(
+        $this->alerts,
+        $this->contacts,
+        $this->devices,
+        ($this->gate)(),
+        [],
+    );
+
+    $alert = $dispatcher->dispatch(($this->request)([
+        'contact' => 'Sam, 07700 900123',
+    ]), 1_700_000_000);
+
+    // In the contacts store...
+    $this->assertSame('Sam, 07700 900123', $this->contacts->find($alert->id));
+
+    // ...and nowhere in the alert itself, which is what travels
+    // through FCM and onto a lock screen.
+    $encoded = (string) json_encode($alert->toArray());
+    $this->assertStringNotContainsString('900123', $encoded);
+    $this->assertStringNotContainsString('Sam', $encoded);
+});
+
+test('poll exposes only that a contact exists', function () {
+    $token = ($this->enrol)('responder@example.com');
+    $alert = $this->alerts->create(($this->request)(), time());
+    $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+    // The in-memory repository does not model the join, so assert the
+    // contract directly: the serialised alert carries a flag, and the
+    // number is not in it.
+    $encoded = (string) json_encode($alert->toArray());
+    $this->assertArrayHasKey('has_contact', $alert->toArray());
+    $this->assertStringNotContainsString('900123', $encoded);
+
+    $result = ($this->controller)()->pending(($this->authed)($token));
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertStringNotContainsString(
+        '900123',
+        (string) json_encode($result->get_data()),
+        'A poll response must never carry the contact itself.',
+    );
+});
+
+test('contact requires authentication', function () {
+    $alert = $this->alerts->create(($this->request)(), time());
+    $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+    $result = ($this->controller)()->contact(new WP_REST_Request(['id' => $alert->id]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+});
+
+test('contact is returned to an entitled handset and audited', function () {
+    $token = ($this->enrol)('responder@example.com');
+    $alert = $this->alerts->create(($this->request)(['reference' => 'SHIFT-1']), time());
+    $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+    $result = ($this->controller)()->contact(($this->authed)($token, ['id' => $alert->id]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame('Sam, 07700 900123', $result->get_data()['contact']);
+
+    // The audit entry is what keeps Sentinel's promise that a regulator
+    // can answer "who saw this, and when".
+    $this->assertNotEmpty(
+        $this->audit->entries,
+        'Reading an alert contact must write a Scrutiny audit entry.',
+    );
+});
+
+test('another responders targeted contact is not readable', function () {
+    $token = ($this->enrol)('responder@example.com');
+    $alert = $this->alerts->create(
+        ($this->request)(['target_email' => 'someone.else@example.com']),
+        time(),
+    );
+    $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+    $result = ($this->controller)()->contact(($this->authed)($token, ['id' => $alert->id]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame(404, $result->get_error_data()['status'] ?? null);
+    $this->assertSame([], $this->audit->entries, 'A refused read must not be audited as a read.');
+});
+
+test('alert with no contact returns an empty string and is not audited', function () {
+    $token = ($this->enrol)('responder@example.com');
+    $alert = $this->alerts->create(($this->request)(), time());
+
+    $result = ($this->controller)()->contact(($this->authed)($token, ['id' => $alert->id]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame('', $result->get_data()['contact']);
+    $this->assertSame([], $this->audit->entries, 'There was no personal data to record a view of.');
+});
+
+// --- encryption -------------------------------------------------------
+test('cipher round trips', function () {
+    $cipher = new Cipher('sentinel-monitor-alert-contact');
+    $encrypted = $cipher->encrypt('Sam, 07700 900123');
+
+    $this->assertNotSame('', $encrypted);
+    $this->assertStringNotContainsString('900123', $encrypted);
+    $this->assertSame('Sam, 07700 900123', $cipher->decrypt($encrypted));
+});
+
+test('cipher is domain separated', function () {
+    // A value encrypted for one purpose must not decrypt as another,
+    // so a bug that crossed the two fails closed.
+    $encrypted = (new Cipher('sentinel-monitor-alert-contact'))->encrypt('Sam, 07700 900123');
+
+    $this->assertSame('', (new Cipher('sentinel-monitor-secrets'))->decrypt($encrypted));
+});
+
+test('rotating the salt makes stored contacts unreadable', function () {
+    $cipher = new Cipher('sentinel-monitor-alert-contact');
+    $encrypted = $cipher->encrypt('Sam, 07700 900123');
+
+    $this->salts['auth'] = 'rotated-' . str_repeat('q', 48);
+
+    $this->assertSame('', $cipher->decrypt($encrypted));
+});
+
+test('tampered ciphertext is refused', function () {
+    // GCM authenticates as well as encrypts, so a modified payload is
+    // detected rather than decrypting to rubbish.
+    $cipher = new Cipher('sentinel-monitor-alert-contact');
+    $encrypted = $cipher->encrypt('Sam, 07700 900123');
+
+    $raw = base64_decode($encrypted, true);
+    $this->assertIsString($raw);
+    $raw[strlen($raw) - 1] = $raw[strlen($raw) - 1] === 'A' ? 'B' : 'A';
+
+    $this->assertSame('', $cipher->decrypt(base64_encode($raw)));
+});

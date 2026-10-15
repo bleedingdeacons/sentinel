@@ -18,6 +18,11 @@ declare(strict_types=1);
  * Not loaded here: the `sentinel` stub group. Sentinel *is* the logger, so
  * wp_log() and Sentinel_Log_Channel come from src/Logger/sentinel-logger.php —
  * the real thing under test, not a stand-in for it.
+ *
+ * Loaded for the Monitor module: the `rest` group, because its controller
+ * tests drive route callbacks with WP_REST_Request/WP_REST_Response, and
+ * Unity's and Scrutiny's sources from the sibling checkouts, for the
+ * interfaces and the test doubles those plugins ship.
  */
 
 use BleedingDeacons\WpMocks\Bootstrap;
@@ -35,7 +40,56 @@ if (!defined('PHPUNIT_COMPOSER_INSTALL')) {
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-Bootstrap::load(['wordpress']);
+Bootstrap::load(['wordpress', 'rest']);
+
+// Unity and Scrutiny, for the Monitor module's tests. The module is written
+// against their interfaces and the doubles they ship at
+// {Unity,Scrutiny}\Testing\Doubles; a PSR-4 autoloader over each sibling
+// checkout covers both. UNITY_PATH and SCRUTINY_PATH override the default
+// locations. CI checks both out beside this repo.
+//
+// A missing checkout is reported rather than fatal: the logger and admin
+// tests need neither, and stopping them over a sibling they never touch
+// would be a poor trade. The Monitor tests then fail on the missing class,
+// with this warning above them saying why.
+foreach (['Unity' => 'UNITY_PATH', 'Scrutiny' => 'SCRUTINY_PATH'] as $sentinelSibling => $sentinelEnv) {
+    $sentinelSiblingSrc = (getenv($sentinelEnv) ?: dirname(__DIR__, 2) . '/' . strtolower($sentinelSibling)) . '/src';
+
+    if (!is_dir($sentinelSiblingSrc)) {
+        fwrite(STDERR, PHP_EOL . 'WARNING: ' . $sentinelSibling . ' source not found at ' . $sentinelSiblingSrc
+            . '. The Monitor tests need it checked out beside Sentinel (or ' . $sentinelEnv . ' set).'
+            . PHP_EOL . PHP_EOL);
+        continue;
+    }
+
+    $sentinelPrefix = $sentinelSibling . chr(92);
+    spl_autoload_register(static function (string $class) use ($sentinelPrefix, $sentinelSiblingSrc): void {
+        if (!str_starts_with($class, $sentinelPrefix)) {
+            return;
+        }
+
+        $file = $sentinelSiblingSrc . '/' . str_replace(chr(92), '/', substr($class, strlen($sentinelPrefix))) . '.php';
+
+        if (is_file($file)) {
+            require_once $file;
+        }
+    });
+}
+
+// WP_List_Table and WP_Role live in wp-admin/includes rather than loaded
+// core, so no shared stub group covers them. The Monitor devices screen
+// renders two list tables for real inside an output buffer, and
+// Capabilities grants a capability to a role.
+require_once __DIR__ . '/stubs/class-wp-list-table.php';
+require_once __DIR__ . '/stubs/class-wp-role.php';
+
+// wpdb, for the Monitor repository tests: their WpdbStub records the SQL each
+// repository emits, and the repositories type-hint wpdb. Nothing else in
+// Sentinel names the class, so aliasing it here changes nothing for the
+// logger, which takes whatever object is in the global.
+if (!class_exists('wpdb')) {
+    class_alias(\Sentinel\Tests\Monitor\Fixtures\WpdbStub::class, 'wpdb');
+}
 
 // Makes plugins_url()/plugin_dir_url() answer with Sentinel's own path.
 WpState::$pluginSlug = 'sentinel';

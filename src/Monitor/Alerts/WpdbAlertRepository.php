@@ -1,0 +1,546 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sentinel\Monitor\Alerts;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+use LogicException;
+use wpdb;
+
+use function dbDelta;
+
+/**
+ * $wpdb-backed implementation of {@see AlertRepository}.
+ *
+ * Two tables, created via dbDelta on activation:
+ *
+ *   `…sentinel_monitor_alerts`      — one row per alert raised.
+ *   `…sentinel_monitor_alert_acks`  — one row per (alert, device) that has alarmed.
+ *
+ * The split is what lets one alert ring several handsets and be
+ * answered independently by each, and it is what the admin view reads
+ * to answer "did anybody pick this up".
+ *
+ * Neither table holds personal data beyond the responder's own email on
+ * an acknowledgement — see {@see Alert} for why that rule is strict.
+ */
+final class WpdbAlertRepository implements AlertRepository
+{
+    public const TABLE_SUFFIX = 'sentinel_monitor_alerts';
+    public const ACKS_TABLE_SUFFIX = 'sentinel_monitor_alert_acks';
+
+    /**
+     * @return literal-string
+     *
+     * See WpdbPasswordCredentialRepository::tableName() on why the assertion
+     * is needed and why it holds.
+     */
+    public static function tableName(wpdb $wpdb): string
+    {
+        /** @var literal-string $prefix */
+        $prefix = $wpdb->prefix;
+
+        return $prefix . self::TABLE_SUFFIX;
+    }
+
+    /** @return literal-string */
+    public static function acksTableName(wpdb $wpdb): string
+    {
+        /** @var literal-string $prefix */
+        $prefix = $wpdb->prefix;
+
+        return $prefix . self::ACKS_TABLE_SUFFIX;
+    }
+
+    public function __construct(private readonly wpdb $wpdb)
+    {
+    }
+
+    /**
+     * Idempotent: safe to call on every activation.
+     *
+     * The (target_email, expires_at) index covers the poll query, which
+     * is the hottest thing in this feature — every handset runs it every
+     * few seconds while on duty.
+     *
+     * <b>`level` defaults to empty rather than to a level, and that is
+     * the whole of its migration.</b> dbDelta stamps every existing row
+     * with a new column's default, so defaulting to `yellow` would
+     * flatten the urgent alerts already in the table down to a heads-up.
+     * Empty instead means "this row predates the level", which
+     * {@see level()} answers by reading the priority the row was actually
+     * written with. Nothing ever writes an empty one — {@see create()}
+     * always has a level to put there.
+     *
+     * <b>`sender_email` defaults to empty and needs no backfill.</b>
+     * dbDelta stamps existing rows with it, and empty is exactly what
+     * they mean: nothing raised them from a handset, because until this
+     * column existed nothing could. See {@see Alert::$senderEmail}.
+     *
+     * `response` defaults to `first` because that stamp is simply true:
+     * every row written before the column existed was first-to-respond,
+     * that being the only behaviour there was.
+     *
+     * <b>No comments in the SQL.</b> dbDelta parses these statements with
+     * regular expressions rather than a SQL parser, and it does not
+     * expect to find comments among the column definitions.
+     */
+    public static function install(wpdb $wpdb): void
+    {
+        if (!function_exists('dbDelta')) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        }
+
+        $charset = $wpdb->get_charset_collate();
+        $table   = self::tableName($wpdb);
+        $acks    = self::acksTableName($wpdb);
+
+        $sql = "CREATE TABLE {$table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            kind VARCHAR(32) NOT NULL,
+            source VARCHAR(64) NOT NULL DEFAULT '',
+            priority VARCHAR(16) NOT NULL DEFAULT 'normal',
+            level VARCHAR(16) NOT NULL DEFAULT '',
+            response VARCHAR(16) NOT NULL DEFAULT 'first',
+            title VARCHAR(200) NOT NULL,
+            body TEXT NOT NULL,
+            reference VARCHAR(64) NOT NULL DEFAULT '',
+            payload TEXT NULL,
+            message_uuid CHAR(36) NOT NULL DEFAULT '',
+            target_email VARCHAR(254) NOT NULL DEFAULT '',
+            sender_email VARCHAR(254) NOT NULL DEFAULT '',
+            target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            created_at BIGINT UNSIGNED NOT NULL,
+            expires_at BIGINT UNSIGNED NOT NULL,
+            PRIMARY KEY  (id),
+            KEY target_expiry (target_email, expires_at),
+            KEY message_uuid (message_uuid),
+            KEY created_at (created_at)
+        ) {$charset};";
+
+        dbDelta($sql);
+
+        $acksSql = "CREATE TABLE {$acks} (
+            alert_id BIGINT UNSIGNED NOT NULL,
+            device_id BIGINT UNSIGNED NOT NULL,
+            member_email VARCHAR(254) NOT NULL,
+            acked_at BIGINT UNSIGNED NOT NULL,
+            PRIMARY KEY  (alert_id, device_id),
+            KEY device_id (device_id)
+        ) {$charset};";
+
+        dbDelta($acksSql);
+    }
+
+    public function create(AlertRequest $request, int $now): Alert
+    {
+        $table = self::tableName($this->wpdb);
+
+        $payloadJson = $request->payload === []
+            ? null
+            : (string) wp_json_encode($request->payload);
+
+        $this->wpdb->insert(
+            $table,
+            [
+                'kind'         => $request->kind,
+                'source'       => $request->source,
+                'priority'     => $request->priority,
+                'level'        => $request->level,
+                'response'     => $request->response,
+                'title'        => $request->title,
+                'body'         => $request->body,
+                'reference'    => $request->reference,
+                'payload'      => $payloadJson,
+                'message_uuid' => $request->messageUuid,
+                'target_email' => $request->targetEmail,
+                'sender_email' => $request->senderEmail,
+                'target_device_id' => $request->targetDeviceId,
+                'exclude_device_id' => $request->excludeDeviceId,
+                'created_at'   => $now,
+                'expires_at'   => $request->expiresAt($now),
+            ],
+            // <b>Counted, not eyeballed.</b> Twelve strings then four
+            // integers, matching the array above key for key. A format
+            // array out of step with its data does not raise — wpdb
+            // simply applies the wrong placeholder to each value from the
+            // mismatch onwards, and the row is written with the columns
+            // quietly shifted.
+            [
+                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%d', '%d', '%d', '%d',
+            ],
+        );
+
+        return new Alert(
+            (int) $this->wpdb->insert_id,
+            $request->kind,
+            $request->source,
+            $request->priority,
+            $request->title,
+            $request->body,
+            $request->reference,
+            $request->payload,
+            $request->targetEmail,
+            $now,
+            $request->expiresAt($now),
+            targetDeviceId: $request->targetDeviceId,
+            messageUuid: $request->messageUuid,
+            excludeDeviceId: $request->excludeDeviceId,
+            level: $request->level,
+            response: $request->response,
+            senderEmail: $request->senderEmail,
+        );
+    }
+
+    public function findById(int $id): ?Alert
+    {
+        $table = self::tableName($this->wpdb);
+        $row = $this->wpdb->get_row($this->wpdb->prepare(
+            "SELECT {$this->columns()} FROM {$table} WHERE id = %d LIMIT 1",
+            $id,
+        ), ARRAY_A);
+
+        return is_array($row) ? $this->hydrate($row) : null;
+    }
+
+    public function pendingFor(string $memberEmail, int $deviceId, int $now, int $limit): array
+    {
+        $limit = max(1, min(100, $limit));
+        $table = self::tableName($this->wpdb);
+        $acks  = self::acksTableName($this->wpdb);
+
+        // LEFT JOIN … IS NULL rather than NOT IN (SELECT …): the
+        // anti-join uses the acks primary key directly, where the
+        // subquery form has to materialise every ack this device has
+        // ever made.
+        //
+        // Oldest first, so a handset that has been out of signal alarms
+        // in the order things actually happened.
+        $contacts = WpdbAlertContactRepository::tableName($this->wpdb);
+
+        // <b>An answered message is over, for everybody — when somebody
+        // was meant to take it on.</b> The third condition below drops any
+        // alert whose message already carries an acknowledgement from any
+        // handset, which is what makes a responder taking a job clear it
+        // off the rest of the rota's screens instead of leaving thirty
+        // people to dismiss it one by one. Monitor removes it locally the
+        // moment the notice arrives; this is what stops the next poll
+        // handing it straight back.
+        //
+        // Two exemptions, and both are load-bearing:
+        //
+        //  * <b>Anything informational.</b> Nobody is taking it on, so one
+        //    responder closing it says nothing about anybody else's copy
+        //    and must not clear it from their screens. This used to test
+        //    the acknowledgement notice's *kind*, which was the only thing
+        //    that behaved this way; {@see Alert::RESPONSE_NONE} is that
+        //    same exemption made askable, and the notice is now simply one
+        //    thing that asks for it. Suppression follows the requirement
+        //    rather than the kind because that is the actual distinction:
+        //    an alert is a job one person takes, a message is news
+        //    everybody gets.
+        //  * <b>The empty uuid.</b> Rows written before that column
+        //    existed all share it and are not one message; matching on it
+        //    would let any one of them silence all the others. Those fall
+        //    back to the per-device behaviour they were written under.
+        //
+        // The second LEFT JOIN reads only whether a contact row exists —
+        // never the encrypted column itself. Personal data must not travel
+        // on the path every handset runs every few seconds; the app is told
+        // there is a contact and fetches it separately, once, audited.
+        //
+        // <b>The address filter branches on target type rather than being
+        // ANDed with it.</b> A device target overrides the address, which is
+        // what {@see \Sentinel\Monitor\Alerts\AlertDispatcher::resolveTargets()} and
+        // {@see \Sentinel\Monitor\Rest\AlertController::maySee()} both already do.
+        // Conjoining the two instead meant an alert carrying a device id and
+        // somebody else's address was pushed to that handset and then hidden
+        // from it on the poll — an alert only the fast path could deliver,
+        // which is precisely the failure the store-first design exists to
+        // rule out. It would have gone missing on the pull-only heads and
+        // after any push failure.
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT a.id, a.kind, a.source, a.priority, a.level, a.response, a.title,
+                    a.body, a.reference, a.payload, a.message_uuid, a.target_email,
+                    a.sender_email, a.target_device_id, a.exclude_device_id,
+                    a.created_at, a.expires_at,
+                    (c.alert_id IS NOT NULL) AS has_contact
+               FROM {$table} a
+               LEFT JOIN {$acks} k ON k.alert_id = a.id AND k.device_id = %d
+               LEFT JOIN {$contacts} c ON c.alert_id = a.id
+              WHERE k.alert_id IS NULL
+                AND a.expires_at > %d
+                AND a.exclude_device_id <> %d
+                AND (
+                      a.response = %s
+                   OR a.message_uuid = ''
+                   OR NOT EXISTS (
+                        SELECT 1
+                          FROM {$acks} answered
+                          JOIN {$table} sibling ON sibling.id = answered.alert_id
+                         WHERE sibling.message_uuid = a.message_uuid
+                      )
+                )
+                AND (
+                      (a.target_device_id > 0 AND a.target_device_id = %d)
+                   OR (a.target_device_id = 0
+                       AND (a.target_email = '' OR a.target_email = %s))
+                )
+              ORDER BY a.id ASC
+              LIMIT %d",
+            $deviceId,
+            $now,
+            $deviceId,
+            Alert::RESPONSE_NONE,
+            $deviceId,
+            $memberEmail,
+            $limit,
+        ), ARRAY_A);
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array
+    {
+        if ($messageUuid === '') {
+            return [];
+        }
+
+        $limit = max(1, min(500, $limit));
+        $table = self::tableName($this->wpdb);
+
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT {$this->columns()}
+               FROM {$table}
+              WHERE message_uuid = %s
+              ORDER BY id ASC
+              LIMIT %d",
+            $messageUuid,
+            $limit,
+        ), ARRAY_A);
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function acknowledge(int $alertId, int $deviceId, string $memberEmail, int $now): bool
+    {
+        $acks = self::acksTableName($this->wpdb);
+
+        // INSERT IGNORE makes the repeat ack a no-op at the storage
+        // layer, which is where the idempotence belongs: two handsets
+        // racing, or one retrying after a dropped response, must not
+        // overwrite the first acknowledgement's timestamp.
+        $sql = $this->wpdb->prepare(
+            "INSERT IGNORE INTO {$acks} (alert_id, device_id, member_email, acked_at)
+             VALUES (%d, %d, %s, %d)",
+            $alertId,
+            $deviceId,
+            $memberEmail,
+            $now,
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the alert acknowledgement query.');
+        }
+
+        $inserted = $this->wpdb->query($sql);
+
+        return is_int($inserted) && $inserted > 0;
+    }
+
+    public function acknowledgementsFor(int $alertId): array
+    {
+        $acks = self::acksTableName($this->wpdb);
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT device_id, member_email, acked_at
+               FROM {$acks}
+              WHERE alert_id = %d
+              ORDER BY acked_at ASC, device_id ASC",
+            $alertId,
+        ), ARRAY_A);
+
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $out[] = [
+                'device_id'    => (int) $row['device_id'],
+                'member_email' => (string) $row['member_email'],
+                'acked_at'     => (int) $row['acked_at'],
+            ];
+        }
+
+        return $out;
+    }
+
+    public function list(int $limit, int $offset): array
+    {
+        $limit  = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $table  = self::tableName($this->wpdb);
+
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT {$this->columns()}
+               FROM {$table}
+              ORDER BY created_at DESC, id DESC
+              LIMIT %d OFFSET %d",
+            $limit,
+            $offset,
+        ), ARRAY_A);
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function countAll(): int
+    {
+        $table = self::tableName($this->wpdb);
+        return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+    }
+
+    public function purgeExpiredBefore(int $before): int
+    {
+        $table = self::tableName($this->wpdb);
+        $acks  = self::acksTableName($this->wpdb);
+
+        // Acknowledgements go first. There is no foreign key here (WP
+        // core tables carry none and dbDelta cannot express one), so
+        // deleting the alerts first would strand every ack row against
+        // an id that no longer exists.
+        $acksSql = $this->wpdb->prepare(
+            "DELETE k FROM {$acks} k
+               INNER JOIN {$table} a ON a.id = k.alert_id
+              WHERE a.expires_at < %d",
+            $before,
+        );
+
+        if ($acksSql === null) {
+            throw new LogicException('Failed to prepare the alert-acknowledgement purge query.');
+        }
+
+        $this->wpdb->query($acksSql);
+
+        $sql = $this->wpdb->prepare("DELETE FROM {$table} WHERE expires_at < %d", $before);
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the alert purge query.');
+        }
+
+        $deleted = $this->wpdb->query($sql);
+
+        return is_int($deleted) ? $deleted : 0;
+    }
+
+    /** @return literal-string */
+    private function columns(): string
+    {
+        return 'id, kind, source, priority, level, response, title, body, reference, payload, '
+            . 'message_uuid, target_email, sender_email, target_device_id, exclude_device_id, '
+            . 'created_at, expires_at';
+    }
+
+    /**
+     * @param mixed $rows
+     * @return array<int, Alert>
+     */
+    private function hydrateAll($rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (is_array($row)) {
+                $out[] = $this->hydrate($row);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function hydrate(array $row): Alert
+    {
+        return new Alert(
+            (int) $row['id'],
+            (string) $row['kind'],
+            (string) $row['source'],
+            (string) $row['priority'],
+            (string) $row['title'],
+            (string) $row['body'],
+            (string) $row['reference'],
+            $this->decodePayload($row['payload'] ?? null),
+            (string) $row['target_email'],
+            (int) $row['created_at'],
+            (int) $row['expires_at'],
+            // Absent on the queries that do not join the contacts table
+            // (the admin list, findById); those callers do not use it.
+            (bool) ($row['has_contact'] ?? false),
+            (int) ($row['target_device_id'] ?? 0),
+            (string) ($row['message_uuid'] ?? ''),
+            (int) ($row['exclude_device_id'] ?? 0),
+            // <b>A row with no level falls back to its priority, not to
+            // the default.</b> Both are rows this code has to read: one
+            // written before the columns existed, one selected by a query
+            // that did not ask for them. Defaulting those to yellow would
+            // silently demote an urgent alert to a heads-up — so the older
+            // field answers where the newer one is absent, which is the
+            // whole reason it is still stored. See Alert::PRIORITY_NORMAL.
+            $this->level($row),
+            Alert::normaliseResponse((string) ($row['response'] ?? '')),
+            (string) ($row['sender_email'] ?? ''),
+        );
+    }
+
+    /**
+     * The level a row is at. See the call site in {@see hydrate()} on why
+     * an absent one asks the priority rather than taking the default.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function level(array $row): string
+    {
+        $level = (string) ($row['level'] ?? '');
+        if ($level !== '') {
+            return Alert::normaliseLevel($level);
+        }
+
+        return Alert::levelForPriority((string) ($row['priority'] ?? ''));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function decodePayload(mixed $stored): array
+    {
+        if (!is_string($stored) || $stored === '') {
+            return [];
+        }
+
+        $decoded = json_decode($stored, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decoded as $key => $value) {
+            if (is_string($key) && (is_string($value) || is_int($value) || is_float($value))) {
+                $out[$key] = (string) $value;
+            }
+        }
+
+        return $out;
+    }
+}

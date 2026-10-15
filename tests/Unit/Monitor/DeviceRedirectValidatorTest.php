@@ -1,0 +1,117 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sentinel\Tests\Monitor;
+
+use Sentinel\Monitor\Auth\DeviceRedirectValidator;
+
+/**
+ * The allow-list that decides where a one-time exchange code may be
+ * delivered.
+ *
+ * This is the highest-consequence check in the device sign-in flow: a
+ * redirect an attacker can influence is a code an attacker receives, and
+ * the code buys a long-lived device token. So the tests below are
+ * mostly about what must be *refused* — an allow-list is only as good as
+ * the things it turns away.
+ */
+
+beforeEach(function () {
+    $this->validator = new DeviceRedirectValidator();
+});
+
+test('accepts the app scheme', function () {
+    $this->assertTrue($this->validator->isAllowed('monitor://auth'));
+});
+
+test('app scheme is case insensitive', function () {
+    // Schemes and hosts are case-insensitive per RFC 3986, and
+    // platforms differ on how they normalise them before handing the
+    // URI over.
+    $this->assertTrue($this->validator->isAllowed('MONITOR://AUTH'));
+});
+
+test('accepts loopback on any high port', function () {
+    // RFC 8252 §7.3 requires *any* port be accepted: a desktop app
+    // cannot reserve one in advance.
+    $this->assertTrue($this->validator->isAllowed('http://127.0.0.1:1024/callback'));
+    $this->assertTrue($this->validator->isAllowed('http://127.0.0.1:54321/callback'));
+    $this->assertTrue($this->validator->isAllowed('http://[::1]:49152/cb'));
+});
+
+test('refuses', function (string $uri, string $why) {
+    $this->assertFalse($this->validator->isAllowed($uri), $why);
+})->with('refusedRedirects');
+
+/**
+ * @return array<string, array{0: string, 1: string}>
+ */
+dataset('refusedRedirects', function (): array {
+    return [
+        'empty' => ['', 'An empty redirect is not a destination.'],
+        'external https' => [
+            'https://evil.example/callback',
+            'The whole point of the allow-list is that arbitrary hosts are refused.',
+        ],
+        'app scheme, wrong host' => [
+            'monitor://evil',
+            'Only the auth host is claimed by the app.',
+        ],
+        'localhost by name' => [
+            'http://localhost:8080/cb',
+            'RFC 8252 §8.3: localhost resolves through DNS and can be redirected; the literals cannot.',
+        ],
+        'loopback on a privileged port' => [
+            'http://127.0.0.1:80/cb',
+            'An unprivileged app cannot bind below 1024, so a request for one is not the app.',
+        ],
+        'loopback over https' => [
+            'https://127.0.0.1:8080/cb',
+            'Only the plain-http loopback form is expected.',
+        ],
+        'loopback with no port' => [
+            'http://127.0.0.1/cb',
+            'Without a port there is no listener to speak of.',
+        ],
+        'carries a fragment' => [
+            'monitor://auth#https://evil.example',
+            'A fragment can smuggle a second URI past naive parsing.',
+        ],
+        'carries credentials' => [
+            'monitor://auth@evil.example',
+            'Userinfo in the authority makes the real host the part after the @.',
+        ],
+        'app scheme with an existing query' => [
+            'monitor://auth?code=already',
+            'We append the code ourselves; a supplied one could shadow it.',
+        ],
+        'a non-loopback address that looks close' => [
+            'http://127.0.0.1.evil.example:8080/cb',
+            'The host is evil.example, not the loopback.',
+        ],
+        'not a URI at all' => ['just-a-string', 'Nothing to redirect to.'],
+    ];
+});
+
+test('with params appends to the app scheme', function () {
+    // add_query_arg() is unreliable for a private scheme with no
+    // path, which is exactly the shape the app registers — hence
+    // the hand-rolled composition this asserts.
+    $this->assertSame(
+        'monitor://auth?code=abc123',
+        $this->validator->withParams('monitor://auth', ['code' => 'abc123']),
+    );
+});
+
+test('with params encodes values', function () {
+    $result = $this->validator->withParams('monitor://auth', ['error' => 'not eligible/&']);
+
+    $this->assertStringStartsWith('monitor://auth?error=', $result);
+    $this->assertStringNotContainsString(' ', $result);
+    $this->assertStringNotContainsString('&', substr($result, strlen('monitor://auth?error=')));
+});
+
+test('with params leaves uri alone when there is nothing to add', function () {
+    $this->assertSame('monitor://auth', $this->validator->withParams('monitor://auth', []));
+});

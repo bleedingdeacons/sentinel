@@ -18,20 +18,30 @@ declare(strict_types=1);
 //   - wp-mocks' own TestCase — LoggerManagerTest, which is purely filesystem-
 //     shaped and has no use for the logger singleton.
 //
+//   - Sentinel\Tests\Monitor\MonitorTestCase — the Monitor module, moved
+//     from Reach with the tests written against Reach's own base case. It
+//     adds hook capture and a wp_salt() alias, and resets the shared
+//     MonitorServices between tests. Bound to the whole directory, so a new
+//     Monitor spec is covered without anyone remembering to list it.
+//
 // LogLevelTest touches none of WordPress and stays on Pest's default, plain
 // PHPUnit.
 //
 // So this list is load-bearing: a test that reaches Brain Monkey from a file
 // not named here finds none of its functions defined.
 //
-// Two files stay PHPUnit classes rather than Pest closures, because their
-// tests define UNITY_KILL — which cannot be undone once defined — and so
+// Three files stay PHPUnit classes rather than Pest closures, because their
+// tests define a constant (UNITY_KILL, or the Monitor transport escape)
+// — which cannot be undone once defined — and so
 // must run in a separate process, which Pest refuses outright. See
 // Unit/Admin/StatusDashboardKilledTest.php and
-// Unit/Admin/UnityControlPageKilledTest.php. Pest still runs them.
+// Unit/Admin/UnityControlPageKilledTest.php — and the Monitor one that
+// defines SENTINEL_MONITOR_ALLOW_INSECURE_TRANSPORT,
+// Unit/Monitor/SecureTransportConstantTest.php. Pest still runs them.
 
 use BleedingDeacons\WpMocks\TestCase as WpMocksTestCase;
 use Sentinel\Tests\AdminTestCase;
+use Sentinel\Tests\Monitor\MonitorTestCase;
 use Sentinel\Tests\TestCase;
 
 pest()->extend(AdminTestCase::class)->in(
@@ -49,4 +59,8 @@ pest()->extend(TestCase::class)->in(
 
 pest()->extend(WpMocksTestCase::class)->in(
     'Unit/Logger/LoggerManagerTest.php',
+);
+
+pest()->extend(MonitorTestCase::class)->in(
+    'Unit/Monitor',
 );

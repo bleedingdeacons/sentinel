@@ -1,0 +1,483 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sentinel\Monitor\Alerts\Transport;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+use Sentinel\Monitor\Alerts\Alert;
+use Sentinel\Monitor\Alerts\Fcm\FcmClient;
+use Sentinel\Monitor\Alerts\Fcm\ServiceAccount;
+use Sentinel\Monitor\Core\Settings;
+use Sentinel\Monitor\Alerts\PayloadCipher;
+use Sentinel\Logger\HasLogger;
+use Sentinel\Monitor\Devices\Device;
+use Sentinel\Monitor\Devices\DeviceRepository;
+
+/**
+ * Delivers alerts through Firebase Cloud Messaging.
+ *
+ * Covers the Android and iOS heads. Windows and macOS have no FCM
+ * coverage and are not attempted — {@see supports()} declines them and
+ * they collect their alerts by polling instead.
+ *
+ * <b>The message shape is the whole point of this class, so it is worth
+ * explaining why it is shaped this way.</b>
+ *
+ * The requirement is that a handset makes a noise when an alert arrives
+ * even if Monitor is closed. Android and iOS reach that outcome by
+ * opposite routes, and the two have to be expressed in one message.
+ *
+ * <i>Android — data-only, deliberately.</i> The obvious thing is to
+ * send a `notification` block and let the system tray display it. That
+ * is a trap here: when a message carries `notification` and the app is
+ * in the background, Android's system tray handles it and the app's
+ * `onMessageReceived` is never called — so Monitor never gets the chance
+ * to raise a full-screen intent or start a looping alarm, and a duty
+ * handset gets a single polite ding instead of ringing like a phone.
+ * Sending data only means Monitor is always the one that builds the
+ * notification, which is what lets it use a full-screen intent, the
+ * alarm category, and a sound that loops until acknowledged. `priority:
+ * high` is what wakes the app to do it; without that the message is
+ * held for a maintenance window and can arrive an hour late.
+ *
+ * <i>iOS — the payload must carry the sound, because nothing else can.</i>
+ * A terminated iOS app runs no code at all, so there is no
+ * `onMessageReceived` equivalent to build anything. Whatever noise the
+ * handset makes has to be described in the APNs payload itself and
+ * played by the system: hence a full `aps` dictionary with an explicit
+ * sound file, capped at the 30 seconds iOS allows.
+ *
+ * <i>iOS — and the words cannot be in it.</i> The system draws the lock
+ * screen from `aps` before any of Monitor runs, so the alert's own text
+ * would be readable by anyone handling the push and by anyone stood near
+ * the phone. `mutable-content: 1` launches Monitor's notification service
+ * extension first, which opens the sealed blob and rewrites the title and
+ * body in place. So `aps` carries a placeholder, the real words travel
+ * encrypted beside it, and the lock screen still shows the alert.
+ *
+ * <i>Critical alerts.</i> `"critical": 1` is what overrides the ringer
+ * switch and Do Not Disturb — exactly what a helpline handset wants,
+ * and exactly why Apple gates it behind an entitlement granted only on
+ * application. When the entitlement has not been granted, sending the
+ * critical flag gets the notification rejected rather than downgraded,
+ * so it is off by default and enabled from settings once Apple has said
+ * yes. Without it, `time-sensitive` still breaks through a Focus mode,
+ * which is most of the benefit for none of the paperwork.
+ *
+ * The TTL matches the alert's own expiry. There is no value in FCM
+ * retrying delivery of an alert that has already gone stale — a
+ * helpline callback nobody answered an hour ago should not ring a
+ * handset now.
+ */
+final class FcmTransport implements AlertTransport
+{
+    use HasLogger;
+
+    /**
+     * Notification channel ids on Android, one per level. Each must match
+     * a channel Monitor creates, or the alert lands on the default channel
+     * with the default sound and none of the alarm behaviour.
+     *
+     * <b>Three channels rather than one channel reconfigured three
+     * ways.</b> An Android channel's importance and sound are fixed when
+     * it is created and cannot be changed afterwards — only the user can
+     * change them, from system settings. So the levels have to be
+     * separate channels, and a level added later has to be a new id
+     * rather than an edit to one of these.
+     *
+     * <b>Monitor chooses the channel it actually posts to.</b> These travel
+     * so the two ends agree, not because the handset is taking
+     * instruction: it derives the same answer from the level. Sending it
+     * is what makes a disagreement visible in a push payload instead of
+     * only in behaviour.
+     */
+    public const ANDROID_CHANNEL = 'monitor_alerts';
+
+    /** Yellow: audible and heads-up, but it does not take the screen. */
+    public const ANDROID_CHANNEL_WARNING = 'monitor_warnings';
+
+    /** Blue: the tray, at ordinary importance. Never wakes anybody. */
+    public const ANDROID_CHANNEL_NOTICE = 'monitor_notices';
+
+    /**
+     * Sound resource names, per platform. Android resolves this against
+     * `res/raw` by bare name, iOS against the bundle by filename, and
+     * both must ship the file — a name that resolves to nothing falls
+     * back to silence on iOS, which is the one failure this feature
+     * cannot tolerate.
+     *
+     * The same linear-PCM WAV serves both. iOS accepts CAF, AIFF or WAV
+     * for a notification sound provided it is under 30 seconds, and a
+     * WAV avoids needing a Mac (afconvert) in the pipeline just to
+     * produce the asset.
+     */
+    private const ANDROID_SOUND = 'monitor_alert';
+    private const IOS_SOUND = 'monitor_alert.wav';
+
+    /**
+     * What an iOS lock screen shows before the notification service
+     * extension has opened the payload — and what it goes on showing if
+     * the extension never runs.
+     *
+     * Says enough to get someone to pick the phone up and nothing that
+     * would matter if the phone is on a table in a room full of people.
+     * That is the same judgement the alert convention makes everywhere
+     * else: an alert names nobody.
+     */
+    private const IOS_PLACEHOLDER_TITLE = 'Sentinel alert';
+    private const IOS_PLACEHOLDER_BODY = 'Open Monitor for the details.';
+
+    /**
+     * The single data key an encrypted push carries.
+     *
+     * A constant because it is counted as well as written — see
+     * {@see FCM_DATA_BYTES} — and a budget computed from a different
+     * spelling than the one sent would be a budget that is quietly
+     * wrong.
+     */
+    private const CIPHERTEXT_KEY = 'ciphertext';
+
+    /**
+     * What FCM allows in a data message.
+     *
+     * <b>Keys count towards it, not just values.</b> The limit is on the
+     * data block as a whole, so the ten characters of
+     * {@see CIPHERTEXT_KEY} come out of the same 4096 the payload does.
+     * Measuring the blob alone would let a payload 4090 bytes long pass
+     * a check it fails at FCM by six.
+     *
+     * What is not counted is the JSON syntax around them — the braces,
+     * quotes and colon — because the limit is on the data, not on its
+     * encoding.
+     */
+    private const FCM_DATA_BYTES = 4096;
+
+    protected static function logChannel(): string
+    {
+        return 'monitor';
+    }
+
+    public function __construct(
+        private readonly FcmClient $client,
+        private readonly Settings $settings,
+        private readonly DeviceRepository $devices,
+    ) {
+    }
+
+    public function supports(Device $device): bool
+    {
+        if (!$device->wantsPush()) {
+            return false;
+        }
+
+        // Only the mobile heads. maccatalyst and windows enrol happily
+        // and simply never claim the FCM transport, but check the
+        // platform too rather than trusting the claim.
+        if ($device->platform !== 'android' && $device->platform !== 'ios') {
+            return false;
+        }
+
+        return $this->account() !== null;
+    }
+
+    public function deliver(Alert $alert, Device $device): bool
+    {
+        $account = $this->account();
+        if ($account === null) {
+            return false;
+        }
+
+        $message = $this->message($alert, $device);
+        if ($message === null) {
+            return false;
+        }
+
+        return $this->client->send($account, $message);
+    }
+
+    /**
+     * Build the FCM `message` body for one alert to one device.
+     *
+     * Null when this handset cannot be sent to. See {@see dataFor()}.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function message(Alert $alert, Device $device): ?array
+    {
+        $data = $this->dataFor($alert, $device);
+        if ($data === null) {
+            return null;
+        }
+
+        $ttlSeconds = max(1, $alert->expiresAt - time());
+
+        return [
+            'token' => $device->pushToken,
+            // Top-level data only. See the class docblock: adding a
+            // `notification` here would stop Android's app-side handler
+            // from ever running.
+            'data'  => $data,
+            'android' => [
+                'priority' => 'high',
+                'ttl'      => $ttlSeconds . 's',
+            ],
+            'apns' => [
+                'headers' => [
+                    'apns-priority'   => '10',
+                    'apns-push-type'  => 'alert',
+                    'apns-expiration' => (string) $alert->expiresAt,
+                ],
+                // The sealed blob is placed in the APNs payload
+                // explicitly rather than left to FCM's merging of the
+                // top-level `data` block. Both routes land it in the
+                // same userInfo dictionary the extension reads, and
+                // saying it here means the shape does not depend on a
+                // behaviour of FCM's that is documented but not ours.
+                //
+                // `+` keeps the left operand on a collision, so `aps`
+                // cannot be displaced by a data key called `aps`.
+                'payload' => ['aps' => $this->aps($alert)] + $data,
+            ],
+        ];
+    }
+
+    /**
+     * The data block for one handset.
+     *
+     * <b>One field.</b> `ciphertext`, and nothing beside it, on both
+     * platforms. Everything the handset needs — the alert id it will
+     * acknowledge against, the kind so a removal notice never reaches
+     * the alarm, the priority, the channel and sound it builds the
+     * notification from, and whatever the raising plugin attached — is
+     * inside the blob. The handset holds one key and opens one thing; it
+     * needs nothing readable first.
+     *
+     * The rule this replaces was "an alert names nobody", which
+     * {@see \Sentinel\Monitor\Alerts\AlertRequest} enforces by capping and
+     * stripping rather than by reading meaning. Encrypting the lot
+     * removes the question instead of policing it.
+     *
+     * <b>iOS used to be exempt, and is not any more.</b> An iOS lock
+     * screen is rendered by the system from the `aps` dictionary before
+     * the app sees anything, so ciphertext alone would once have put
+     * base64 in front of whoever was stood near the phone. Monitor now
+     * ships a Notification Service Extension, which `mutable-content: 1`
+     * launches: it opens the blob and rewrites the title and body before
+     * the lock screen is drawn. What travels in `aps` is a placeholder
+     * naming nobody — see {@see IOS_PLACEHOLDER_TITLE}.
+     *
+     * That closed the last plaintext path. It also means an iOS handset
+     * is refused on the same terms as an Android one, below, where
+     * before it would have been sent to regardless.
+     *
+     * <b>A handset that cannot be encrypted for is not sent to.</b>
+     * Null rather than a plaintext fallback, and the refusal is
+     * logged as an error so it surfaces on the Sentinel dashboard rather
+     * than only in a file nobody opens.
+     *
+     * This is a deliberate reversal of the obvious instinct, which is
+     * that a degraded alert beats no alert. The reasoning against it: a
+     * silent downgrade means a handset quietly receiving caller-adjacent
+     * text in the clear through Google for as long as nobody notices,
+     * and nobody would, because everything keeps working. A refusal is
+     * loud, appears on the dashboard, and is fixed by the responder
+     * signing in again — which is a minute's work and the same recovery
+     * as a lost token. Monitor refuses from its own side too: on Android a
+     * push with no `ciphertext` is ignored outright, and on iOS the
+     * extension says on the lock screen that the handset should sign in
+     * again rather than showing nothing.
+     *
+     * @return array<string, string>|null
+     */
+    private function dataFor(Alert $alert, Device $device): ?array
+    {
+        $key = $this->devices->payloadKeyFor($device->id);
+        if ($key === '') {
+            self::logError('Handset has no payload key; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'remedy'    => 'The responder should sign in again to be issued one.',
+            ]);
+
+            return null;
+        }
+
+        $sealed = PayloadCipher::seal($this->data($alert), $key);
+        if ($sealed === '') {
+            // The same outcome for the same reason: this handset cannot be
+            // sent to in the only form it should be sent to. A key that
+            // will not seal is a key that has been corrupted in storage,
+            // and re-enrolling replaces it.
+            self::logError('Handset payload key could not be used; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'remedy'    => 'The responder should sign in again to be issued a new key.',
+            ]);
+
+            return null;
+        }
+
+        $bytes = strlen(self::CIPHERTEXT_KEY) + strlen($sealed);
+
+        if ($bytes > self::FCM_DATA_BYTES) {
+            // Refused here rather than left to fail inside FCM, and for
+            // the same reason as the two above: it becomes an error on
+            // the dashboard instead of an alert that was accepted and
+            // then quietly never arrived.
+            //
+            // Should not be reachable. AlertRequest's caps put the worst
+            // case it will accept at about a quarter of this once
+            // compressed — see PayloadCipher. It exists because those two
+            // sets of numbers live in different files and nothing but
+            // this connects them.
+            self::logError('Alert payload is too large to push; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'bytes'     => $bytes,
+                'limit'     => self::FCM_DATA_BYTES,
+                'remedy'    => 'The raising plugin is sending more than an alert is meant to carry.',
+            ]);
+
+            return null;
+        }
+
+        return [self::CIPHERTEXT_KEY => $sealed];
+    }
+
+    /**
+     * The structured body Monitor reads to build its own alarm.
+     *
+     * Every value is a string: FCM's data block is a string→string map
+     * and silently rejects anything else.
+     *
+     * @return array<string, string>
+     */
+    private function data(Alert $alert): array
+    {
+        // The alert's own fields go first, because `+` keeps the *left*
+        // operand's value on a key collision. That ordering is the whole
+        // protection: nothing upstream strips reserved names from a
+        // payload — see AlertRequest::payload(), which only flattens and
+        // caps — so a plugin that puts its own "kind" or "alert_id" in
+        // the payload would otherwise change what Monitor thinks the alert
+        // is, and what it acknowledges against.
+        return [
+            'alert_id'  => (string) $alert->id,
+            // The send this delivery came from. Monitor matches an
+            // acknowledgement notice to the message it is about on this
+            // — see Sentinel\Monitor\Alerts\MessageUuid — so it has to be inside
+            // the sealed blob rather than alongside it.
+            'message_uuid' => $alert->messageUuid,
+            'kind'      => $alert->kind,
+            'source'    => $alert->source,
+            // How loud, and what colour Monitor paints the card.
+            'level'     => $alert->level,
+            // Whether the card's button says Acknowledge or Close.
+            'response'  => $alert->response,
+            // Derived from the level, for handsets that predate it. See
+            // Alert::PRIORITY_NORMAL.
+            'priority'  => Alert::priorityFor($alert->level),
+            'title'     => $alert->title,
+            'body'      => $alert->body,
+            'reference' => $alert->reference,
+            // <b>The flag, never the details.</b> Whether a contact
+            // exists is not personal data and has to travel, or a handset
+            // that learns of an alert by push never offers to fetch them
+            // — and the poll copy that knows better is discarded as a
+            // duplicate. The contact itself still requires a separate,
+            // authenticated, audited request. See Alert::withContact().
+            'has_contact' => $alert->hasContact ? '1' : '0',
+            'channel'   => self::channelFor($alert),
+            'sound'     => self::ANDROID_SOUND,
+        ] + $alert->payload;
+    }
+
+    /**
+     * The Android channel a level belongs on. See {@see ANDROID_CHANNEL}
+     * on why there are three of them and who actually decides.
+     */
+    private static function channelFor(Alert $alert): string
+    {
+        return match ($alert->level) {
+            Alert::LEVEL_RED  => self::ANDROID_CHANNEL,
+            Alert::LEVEL_BLUE => self::ANDROID_CHANNEL_NOTICE,
+            default           => self::ANDROID_CHANNEL_WARNING,
+        };
+    }
+
+    /**
+     * The APNs `aps` dictionary. See the class docblock on critical
+     * alerts and why the flag is configuration rather than a constant.
+     *
+     * @return array<string, mixed>
+     */
+    private function aps(Alert $alert): array
+    {
+        $critical = $alert->isUrgent() && $this->settings->isApnsCriticalEnabled();
+
+        // Blue is information, and on iOS that means two things at once:
+        // the passive interruption level, so it does not interrupt at all,
+        // and the system sound rather than the helpline siren. Sending
+        // monitor_alert.wav at a passive level would be a handset that made
+        // an emergency noise for a reminder.
+        $quiet = $alert->level === Alert::LEVEL_BLUE;
+
+        return [
+            // <b>Deliberately not the alert's own words.</b> Everything
+            // readable is inside the sealed blob; Monitor's notification
+            // service extension opens it and rewrites these two before
+            // the lock screen renders. What travels here is what a
+            // responder sees only if that never happens — an extension
+            // that could not run, or a handset on a build without one —
+            // so it has to be safe to show to whoever is stood near the
+            // phone, and still worth waking up for.
+            'alert' => [
+                'title' => self::IOS_PLACEHOLDER_TITLE,
+                'body'  => self::IOS_PLACEHOLDER_BODY,
+            ],
+            'sound' => $quiet ? 'default' : [
+                'critical' => $critical ? 1 : 0,
+                'name'     => self::IOS_SOUND,
+                'volume'   => 1.0,
+            ],
+            // Red asks for critical where Apple has granted it and
+            // time-sensitive where it has not; yellow asks for
+            // time-sensitive, which breaks through a Focus mode without
+            // overriding the ringer switch; blue asks for nothing.
+            'interruption-level' => match (true) {
+                $critical => 'critical',
+                $quiet    => 'passive',
+                default   => 'time-sensitive',
+            },
+            // Wakes the app when it is merely backgrounded rather than
+            // terminated, so it can start the looping alarm that the
+            // 30-second payload sound cannot provide on its own.
+            'content-available' => 1,
+            // Launches Monitor's notification service extension, which is
+            // the only thing that can turn the sealed blob back into
+            // words before iOS draws the lock screen. Without this key
+            // the extension never runs and the responder gets
+            // IOS_PLACEHOLDER_TITLE instead of the alert.
+            'mutable-content' => 1,
+            'category' => 'MONITOR_ALERT',
+        ];
+    }
+
+    /**
+     * The configured service account, or null when FCM has not been set
+     * up. Parsed on each call rather than cached: the parse is cheap,
+     * and caching it would mean an admin's settings change did not take
+     * effect until the next request.
+     */
+    private function account(): ?ServiceAccount
+    {
+        return ServiceAccount::fromJson($this->settings->getFcmServiceAccount());
+    }
+}
