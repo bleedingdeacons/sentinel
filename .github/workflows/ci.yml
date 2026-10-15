@@ -35,16 +35,43 @@ jobs:
       matrix:
         php: ['8.4', '8.5']
 
+    defaults:
+      run:
+        # This plugin and the siblings its PHPStan config and the Monitor
+        # module's tests read are checked out side by side, mirroring a
+        # WordPress plugins/ directory, so run everything from inside this one.
+        working-directory: sentinel
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: sentinel
+
+      - name: Checkout Unity
+        # Scanned by phpstan.neon.dist so cross-plugin symbols resolve, and
+        # loaded by the Monitor module's tests for Unity's interfaces.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bleedingdeacons/unity
+          ref: main
+          path: unity
+
+      - name: Checkout Scrutiny
+        # Scanned by phpstan.neon.dist so cross-plugin symbols resolve, and
+        # loaded by the Monitor module's tests for Scrutiny's AuditLogger.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bleedingdeacons/scrutiny
+          ref: main
+          path: scrutiny
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: ${{ matrix.php }}
           # zip: build.php assembles the release archive with ZipArchive.
-          extensions: mbstring, intl, json, zip
+          extensions: mbstring, intl, json, zip, openssl
           tools: composer:v2
           # pcov drives PHPUnit's line coverage for the Coveralls upload
           # below. Much faster than xdebug for coverage-only runs.
@@ -60,7 +87,7 @@ jobs:
           # Keyed on composer.json: composer.lock is untracked in several of
           # these repos, so it is not a reliable cache key across the suite.
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-php${{ matrix.php }}-composer-${{ hashFiles('**/composer.json') }}
+          key: ${{ runner.os }}-php${{ matrix.php }}-composer-${{ hashFiles('sentinel/composer.json') }}
           restore-keys: |
             ${{ runner.os }}-php${{ matrix.php }}-composer-
 
@@ -242,11 +269,15 @@ jobs:
         # both has them writing the same paths at the same time.
         if: matrix.php == '8.4'
         # Reports a coverage number; does not gate the build. The Clover report
-        # is produced by the PHPUnit step above.
+        # is produced by the PHPUnit step above. This action runs from the repo
+        # root (defaults.run.working-directory does not apply to `uses:` steps),
+        # so the file is under sentinel/ and base-path strips that prefix back off
+        # the paths inside the report to match the repository layout.
         uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         continue-on-error: true
         with:
-          file: build/logs/clover.xml
+          file: sentinel/build/logs/clover.xml
+          base-path: sentinel
           format: clover
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -290,19 +321,41 @@ jobs:
       group: release-${{ github.ref }}
       cancel-in-progress: false
 
+    defaults:
+      run:
+        # Same layout as the gates: this repo and its siblings are
+        # checked out side by side, mirroring a WordPress plugins/
+        # directory, so everything runs from inside sentinel.
+        working-directory: sentinel
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history and tags: see the version step below.
           fetch-depth: 0
+          path: sentinel
+
+      - name: Checkout Unity
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bleedingdeacons/unity
+          ref: main
+          path: unity
+
+      - name: Checkout Scrutiny
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bleedingdeacons/scrutiny
+          ref: main
+          path: scrutiny
 
       - name: Setup PHP 8.4
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: '8.4'
           # zip: build.php assembles the release archive with ZipArchive.
-          extensions: mbstring, intl, json, zip
+          extensions: mbstring, intl, json, zip, openssl
           tools: composer:v2
           # No coverage driver: this job builds, it does not test.
           coverage: none

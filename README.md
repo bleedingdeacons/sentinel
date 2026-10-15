@@ -34,7 +34,8 @@ Sentinel adds a WordPress admin dashboard widget that monitors the health of the
 
 - **Plugin status dashboard** — a single widget on the WordPress admin dashboard showing version and activation status for every monitored Intergroup plugin.
 - **Automatic refresh** — the widget updates via AJAX whenever a monitored plugin fires its `loaded` action or is activated/deactivated, without requiring a full page reload.
-- **No dependencies** — Sentinel has no plugin dependencies; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
+- **No dependencies** — the dashboard and logger need no other plugin; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
+- **Monitor** — the server side of the Monitor app, moved from Reach: handset sign-in (Google, Microsoft, Facebook or password), sealed push alerts over Firebase, acknowledgement, replies and the member directory, all under `sentinel/v1`. Optional: it boots only when Unity is active, needs Scrutiny for audit logging, and stands down with `SENTINEL_MONITOR_KILL`. Configured under **Sentinel → Monitor Settings**.
 - **Lightweight** — minimal footprint; a single dashboard widget class with bundled CSS and JS.
 
 ---
@@ -60,9 +61,9 @@ No configuration is required. The dashboard widget appears automatically once th
 ## Requirements
 
 - **WordPress** 6.0+
-- **PHP** 8.1+
+- **PHP** 8.4+
 
-Sentinel does not depend on any other Intergroup plugins — it simply monitors whichever ones are installed.
+The dashboard and logger do not depend on any other Intergroup plugin — they simply monitor whichever ones are installed. The Monitor module additionally needs **Unity** and **Scrutiny** active, and bundles the **Guardian** OAuth library in `vendor/`.
 
 ---
 
@@ -101,10 +102,14 @@ sentinel/
     │   ├── DashboardWidget.php      # Widget registration, rendering & AJAX endpoint
     │   ├── LogViewerPage.php        # Tools → Sentinel Logs admin page
     │   └── SettingsPage.php         # Settings → Sentinel options page
-    └── Logger/
-        ├── sentinel-logger.php     # Shared mu-plugin (deployed to mu-plugins/)
-        ├── HasLogger.php            # Convenience trait for other plugins
-        └── LoggerManager.php        # Deploy/remove lifecycle for the mu-plugin
+    ├── Logger/
+    │   ├── sentinel-logger.php     # Shared mu-plugin (deployed to mu-plugins/)
+    │   ├── HasLogger.php            # Convenience trait for other plugins
+    │   └── LoggerManager.php        # Deploy/remove lifecycle for the mu-plugin
+    └── Monitor/                     # Server side of the Monitor app (optional; boots on unity/loaded)
+        ├── Plugin.php               # Boot, routes, cron, the 503 guard
+        ├── MonitorServices.php      # Unity-free services (settings, repositories, FCM)
+        ├── Admin/ Alerts/ Auth/ Core/ Devices/ Rest/
 ```
 
 ### Logging

@@ -27,6 +27,10 @@ parameters:
     # guards that are correct at runtime, so PHPDoc informs types but does not
     # prove conditions. Native types are still checked normally.
     treatPhpDocTypesAsCertain: false
+    # The correct signatures for str_contains() and str_starts_with(); see
+    # the stub for why mockery's polyfill otherwise misleads PHPStan.
+    stubFiles:
+        - phpstan/polyfills.stub
     paths:
         - src
     excludePaths:
@@ -35,6 +39,12 @@ parameters:
         # (Sentinel_Logger, Sentinel_Log_Channel, etc.) that are not autoloaded
         # via PSR-4. It is analysed separately if needed.
         - src/Logger/sentinel-logger.php
+    # The Monitor module is written against Unity's and Scrutiny's
+    # interfaces. CI checks both out alongside, as Reach's does; they are
+    # scanned for symbols, never analysed.
+    scanDirectories:
+        - ../unity/src
+        - ../scrutiny/src
     scanFiles:
         # Not analysed (see excludePaths) but scanned for symbols, so
         # Sentinel_Logger and Sentinel_Log_Channel resolve in type positions

@@ -1,0 +1,78 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sentinel\Tests\Monitor\Fixtures;
+
+use Unity\Members\PreferredContact;
+use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\MemberStub as UnityMemberStub;
+
+/**
+ * A Unity member, defaulted the way Sentinel's tests want one.
+ *
+ * The 23 accessors of Unity\Members\Interfaces\Member come from the stub Unity
+ * ships, so a change to that contract surfaces in Unity's build rather than as
+ * silent drift here. This class carries only what is specific to Sentinel.
+ *
+ * There were five hand-written Member doubles in this suite before it — one
+ * named class and four anonymous ones inlined in test files — and they agreed
+ * on every one of these defaults while parameterising different subsets of
+ * fields. Everything is defaulted here, so each test's helper names only what
+ * it varies.
+ *
+ * Why these defaults: Sentinel is a public finder for 12th-step members, so a
+ * member is a twelfth-stepper and is visible (showAnonymousName,
+ * showMemberProfile, isGdprAccepted) unless a test says otherwise — the
+ * visibility gates are what most of these tests are about, and starting them
+ * closed would mean setting three flags on nearly every fixture.
+ */
+final class MemberStub extends UnityMemberStub
+{
+    /** @param array<int, string> $accepts */
+    public function __construct(
+        string $personalEmail = '',
+        bool $twelfthStepper = true,
+        bool $telephoneResponder = false,
+        int $id = 1,
+        ResponderCertification $responderCertification = ResponderCertification::None,
+        string $anonymousName = 'Test',
+        string $area = '',
+        array $accepts = [],
+        /**
+         * Defaulted to a real group, because Monitor's gate now requires
+         * one — see {@see \Sentinel\Monitor\Devices\ResponderGate}. An ordinary
+         * member of this intergroup has a home group; a record without
+         * one is a stub from a half-finished import, and a test that
+         * wants that case says so by passing 0.
+         */
+        int $homeGroup = 88,
+        /**
+         * Both numbers blank by default. Sentinel is the personal-data
+         * surface of a public finder, so a fixture carries a number
+         * only when the test is about how numbers are rendered,
+         * exposed or audited — and then an obviously fake one.
+         */
+        string $mobileNumber = '',
+        string $landlineNumber = '',
+        PreferredContact $preferredContact = PreferredContact::Mobile,
+    ) {
+        parent::__construct(
+            id: $id,
+            anonymousName: $anonymousName,
+            showAnonymousName: true,
+            showMemberProfile: true,
+            homeGroup: $homeGroup,
+            personalEmail: $personalEmail,
+            mobileNumber: $mobileNumber,
+            landlineNumber: $landlineNumber,
+            preferredContact: $preferredContact,
+            twelfthStepper: $twelfthStepper,
+            telephoneResponder: $telephoneResponder,
+            responderCertification: $responderCertification,
+            area: $area,
+            accepts: $accepts,
+            gdprAccepted: true,
+        );
+    }
+}
