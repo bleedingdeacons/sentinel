@@ -416,3 +416,18 @@ test('shortening the cooldown takes effect for an error already cooling', functi
 
     $this->assertSame(1, $throttle->admit('fp', 1061));
 });
+
+test('delivery hangs on the shutdown action, late, and runs from it', function () {
+    $this->captureActions(['shutdown']);
+
+    ErrorAlertListener::register();
+    ($this->log)('error', 'Sync failed');
+
+    $callbacks = $this->actionCallbacks('shutdown');
+    $this->assertCount(1, $callbacks);
+
+    $callbacks[0]();
+
+    $this->assertCount(1, $this->alerts->alerts);
+    $this->assertSame([], ErrorAlertListener::queued());
+});

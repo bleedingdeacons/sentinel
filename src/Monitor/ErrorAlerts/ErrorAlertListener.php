@@ -28,11 +28,14 @@ use Throwable;
  * it hears errors logged before `plugins_loaded` and on requests where Unity
  * never loads — the second being when an alert matters most.
  *
- * <b>Shutdown order.</b> The logger registers its own shutdown handler the
- * first time anything logs, which can be after this registers. A fatal is
- * only announced from that handler, so delivery is registered from inside a
- * shutdown function: anything registered during shutdown runs after every
- * function already queued, the logger's included.
+ * <b>Delivered on WordPress's `shutdown` action</b>, at the latest priority,
+ * with a plain shutdown function behind it for anything logged later still.
+ * Not from a shutdown function registered at the end of the queue, which was
+ * the first version: on the SiteGround test bed something exits from an
+ * earlier shutdown function, and an exit there cancels every one after it, so
+ * the alerts never went. The action runs from WordPress's own shutdown
+ * function, which is registered before any plugin's. Delivery clears the
+ * queue, so the fallback finding it empty is the ordinary case.
  *
  * <b>A fatal is sent at once.</b> WordPress's fatal error handler ends in
  * wp_die(), which exits and cancels every shutdown function after it, this
@@ -83,9 +86,14 @@ final class ErrorAlertListener
         add_action('sentinel_logger_after_write', [self::class, 'onLog'], 10, 3);
         add_action('sentinel_logger_fatal', [self::class, 'onFatal'], 10, 3);
 
-        register_shutdown_function(static function (): void {
-            register_shutdown_function([self::class, 'deliver']);
-        });
+        add_action('shutdown', [self::class, 'onShutdown'], PHP_INT_MAX, 0);
+        register_shutdown_function([self::class, 'onShutdown']);
+    }
+
+    /** Send what the request logged, from the shutdown action or the fallback. */
+    public static function onShutdown(): void
+    {
+        self::send(time(), true);
     }
 
     /**
