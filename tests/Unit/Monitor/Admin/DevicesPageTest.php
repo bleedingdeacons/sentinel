@@ -1817,6 +1817,16 @@ final class PagingDeviceRepository implements DeviceRepository
         return [];
     }
 
+    public function findErrorAlertTargets(): array
+    {
+        return [];
+    }
+
+    public function setErrorAlerts(int $id, bool $enabled): bool
+    {
+        return false;
+    }
+
     public function touch(int $id, int $now): bool
     {
         return false;
@@ -1842,3 +1852,61 @@ final class PagingDeviceRepository implements DeviceRepository
         return 0;
     }
 }
+
+// ── error alerts ──────────────────────────────────────────────────
+function errorAlertsFromRequest(DevicesPage $page): string
+{
+    return (string) (new ReflectionMethod(DevicesPage::class, 'errorAlertsFromRequest'))->invoke($page);
+}
+
+test('a handset can be opted in to error alerts and out again', function () {
+    $devices = ($this->devicesWith)(($this->device)(id: 7));
+
+    $_POST = ['device_id' => '7', 'enable' => '1'];
+    $target = errorAlertsFromRequest(($this->page)(devices: $devices));
+
+    $this->assertTrue($devices->findById(7)?->errorAlerts);
+    $this->assertCount(1, $devices->findErrorAlertTargets());
+    $this->assertStringContainsString('sentinel_monitor_result=error_alerts_on', $target);
+
+    $_POST = ['device_id' => '7', 'enable' => '0'];
+    $target = errorAlertsFromRequest(($this->page)(devices: $devices));
+
+    $this->assertFalse($devices->findById(7)?->errorAlerts);
+    $this->assertSame([], $devices->findErrorAlertTargets());
+    $this->assertStringContainsString('sentinel_monitor_result=error_alerts_off', $target);
+});
+
+test('a revoked or unknown handset cannot be opted in', function (string $id) {
+    $devices = ($this->devicesWith)(($this->device)(id: 7, revokedAt: revokedAt()));
+
+    $_POST = ['device_id' => $id, 'enable' => '1'];
+    $target = errorAlertsFromRequest(($this->page)(devices: $devices));
+
+    $this->assertSame([], $devices->findErrorAlertTargets());
+    $this->assertStringContainsString('sentinel_monitor_result=error_alerts_failed', $target);
+})->with(['revoked' => ['7'], 'unknown' => ['99'], 'none' => ['0']]);
+
+test('the list shows who is opted in and offers the toggle', function () {
+    $devices = ($this->devicesWith)(
+        ($this->device)(id: 7, label: 'On call phone'),
+        ($this->device)(id: 8, label: 'Responder phone'),
+    );
+    $devices->setErrorAlerts(7, true);
+
+    $html = ($this->renderList)(($this->page)(devices: $devices));
+
+    $this->assertStringContainsString('Error alerts', $html);
+    $this->assertStringContainsString('<strong>On</strong>', ($this->rowFor)($html, 'On call phone'));
+    $this->assertStringContainsString('Stop error alerts', ($this->rowFor)($html, 'On call phone'));
+    $this->assertStringContainsString('Send error alerts', ($this->rowFor)($html, 'Responder phone'));
+    $this->assertStringContainsString(DevicesPage::ERROR_ALERTS_ACTION, $html);
+});
+
+test('the toggle is behind the manage capability', function () {
+    when('current_user_can')->alias(fn (string $cap): bool => $cap !== \Sentinel\Monitor\Core\Capabilities::MANAGE_DEVICES);
+
+    $this->expectException(WpDieException::class);
+
+    ($this->page)()->handleErrorAlerts();
+});

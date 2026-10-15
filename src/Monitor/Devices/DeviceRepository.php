@@ -123,6 +123,24 @@ interface DeviceRepository
     public function findAllLive(): array;
 
     /**
+     * Every live device opted in to error alerts.
+     *
+     * Read without consulting Unity on purpose: the error alerts have to
+     * reach someone when Unity is the thing that is broken. A handset is
+     * gate-checked when it enrols and on every request it makes, so a
+     * live row is already one whose owner was allowed it.
+     *
+     * @return array<int, Device>
+     */
+    public function findErrorAlertTargets(): array;
+
+    /**
+     * Opt a handset in to, or out of, error alerts. False when there is no
+     * such device. Setting the value it already has is a success.
+     */
+    public function setErrorAlerts(int $id, bool $enabled): bool;
+
+    /**
      * A page of devices for the admin list, revoked rows included — the
      * admin screen shows history, unlike the delivery paths which only
      * ever see live rows.

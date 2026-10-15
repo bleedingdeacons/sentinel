@@ -130,6 +130,7 @@ final class DevicesListTable extends WP_List_Table
             'enrolled'  => 'Enrolled',
             'last_seen' => 'Last seen',
             'status'    => 'Status',
+            'error_alerts' => 'Error alerts',
             'actions'   => $this->canManage ? '&nbsp;' : '',
         ], static fn(string $label): bool => $label !== '');
     }
@@ -480,6 +481,7 @@ final class DevicesListTable extends WP_List_Table
             'enrolled'  => esc_html($this->when($item->createdAt)),
             'last_seen' => esc_html($item->lastSeenAt > 0 ? $this->when($item->lastSeenAt) : '—'),
             'status'    => $this->status($item),
+            'error_alerts' => $item->isRevoked() ? '—' : ($item->errorAlerts ? '<strong>On</strong>' : 'Off'),
             'actions'   => $this->rowForms($item),
             default     => '',
         };
@@ -529,7 +531,7 @@ final class DevicesListTable extends WP_List_Table
     }
 
     /**
-     * The per-row Revoke and Remove buttons.
+     * The per-row error-alert toggle, Revoke and Remove buttons.
      *
      * Deliberately forms rather than core's row-action links: both
      * change state, so both post with a nonce of their own. Revoke is
@@ -550,6 +552,18 @@ final class DevicesListTable extends WP_List_Table
         $html = '';
 
         if (!$device->isRevoked()) {
+            // Opting in is a device-management decision like revoking:
+            // it decides whose phone rings when the site logs an error.
+            $html .= '<form method="post" style="display:inline-block;" action="' . $post . '">'
+                . '<input type="hidden" name="action" value="' . esc_attr(DevicesPage::ERROR_ALERTS_ACTION) . '">'
+                . '<input type="hidden" name="device_id" value="' . $device->id . '">'
+                . '<input type="hidden" name="enable" value="' . ($device->errorAlerts ? '0' : '1') . '">'
+                . wp_nonce_field(DevicesPage::ERROR_ALERTS_ACTION . '_' . $device->id, '_wpnonce', true, false)
+                . '<button type="submit" class="button button-small">'
+                . ($device->errorAlerts ? 'Stop error alerts' : 'Send error alerts')
+                . '</button>'
+                . '</form> ';
+
             $html .= '<form method="post" style="display:inline-block;" action="' . $post . '"'
                 . ' onsubmit="return confirm(&#039;Revoke this handset? It will stop receiving alerts'
                 . ' immediately and the responder will need to sign in again.&#039;);">'

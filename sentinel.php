@@ -105,6 +105,12 @@ add_action('plugins_loaded', function (): void {
     }
 }, 5); // Priority 5: load early so hooks below can fire
 
+// Error alerts: page opted-in Monitor handsets when an error is logged.
+// Registered here rather than from the Monitor boot below, so it hears errors
+// logged before plugins_loaded and on requests where Unity never loads — when
+// an alert matters most. It needs nothing from Unity. See ErrorAlertListener.
+\Sentinel\Monitor\ErrorAlerts\ErrorAlertListener::register();
+
 // The Monitor module: the server side of the Monitor app. Optional — it boots
 // only when Unity loads, and stands down without Scrutiny or the Guardian
 // library — so nothing above depends on it. See Sentinel\Monitor\Plugin.

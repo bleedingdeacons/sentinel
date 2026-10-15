@@ -209,6 +209,19 @@ final class InMemoryDeviceRepository implements DeviceRepository
         ));
     }
 
+    public function findErrorAlertTargets(): array
+    {
+        return array_values(array_filter(
+            $this->devices,
+            static fn(Device $d): bool => !$d->isRevoked() && $d->errorAlerts,
+        ));
+    }
+
+    public function setErrorAlerts(int $id, bool $enabled): bool
+    {
+        return $this->replace($id, static fn(Device $d): Device => $d->withErrorAlerts($enabled));
+    }
+
     public function payloadKeyFor(int $id): string
     {
         return $this->payloadKeys[$id] ?? '';
@@ -229,6 +242,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->revokedAt,
             $now,
             $d->lockScreen,
+            $d->errorAlerts,
         ));
     }
 
@@ -251,6 +265,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->revokedAt,
             $d->keyFaultAt,
             $lockScreen,
+            $d->errorAlerts,
         ));
     }
 
@@ -269,6 +284,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->revokedAt,
             $d->keyFaultAt,
             $d->lockScreen,
+            $d->errorAlerts,
         ));
     }
 
@@ -287,6 +303,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->revokedAt,
             $d->keyFaultAt,
             $d->lockScreen,
+            $d->errorAlerts,
         ));
     }
 
@@ -310,6 +327,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $now,
             $d->keyFaultAt,
             $d->lockScreen,
+            $d->errorAlerts,
         ));
     }
 

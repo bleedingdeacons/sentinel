@@ -19,14 +19,16 @@ use Sentinel\Monitor\Alerts\WpdbAlertRepository;
 use Sentinel\Monitor\Core\Settings;
 use Sentinel\Monitor\Devices\DeviceRepository;
 use Sentinel\Monitor\Devices\WpdbDeviceRepository;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertSender;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertSettings;
 use wpdb;
 
 /**
  * The Monitor services that need nothing from Unity, built lazily and
  * shared.
  *
- * Settings, the repositories over Monitor's own tables, and the FCM
- * transport depend only on WordPress. They are built here rather than only
+ * Settings, the repositories over Monitor's own tables, the FCM transport
+ * and the error-alert sender depend only on WordPress. They are built here rather than only
  * inside Unity's container so that something which has to work when Unity
  * does not — an alert about Unity itself failing — can still reach them.
  * {@see MonitorServiceProvider} registers these same instances into Unity's
@@ -45,6 +47,7 @@ final class MonitorServices
     private static ?AlertReplyRepository $alertReplies = null;
     private static ?FcmClient $fcmClient = null;
     private static ?FcmTransport $fcmTransport = null;
+    private static ?ErrorAlertSettings $errorAlertSettings = null;
 
     public static function settings(): Settings
     {
@@ -85,6 +88,21 @@ final class MonitorServices
         );
     }
 
+    public static function errorAlertSettings(): ErrorAlertSettings
+    {
+        return self::$errorAlertSettings ??= new ErrorAlertSettings();
+    }
+
+    public static function errorAlertSender(): ErrorAlertSender
+    {
+        return new ErrorAlertSender(
+            self::devices(),
+            self::alerts(),
+            self::fcmTransport(),
+            self::errorAlertSettings(),
+        );
+    }
+
     /**
      * Forget every built service. For tests, which swap $wpdb between
      * cases.
@@ -98,6 +116,7 @@ final class MonitorServices
         self::$alertReplies = null;
         self::$fcmClient = null;
         self::$fcmTransport = null;
+        self::$errorAlertSettings = null;
     }
 
     private static function wpdb(): wpdb

@@ -36,6 +36,7 @@ Sentinel adds a WordPress admin dashboard widget that monitors the health of the
 - **Automatic refresh** — the widget updates via AJAX whenever a monitored plugin fires its `loaded` action or is activated/deactivated, without requiring a full page reload.
 - **No dependencies** — the dashboard and logger need no other plugin; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
 - **Monitor** — the server side of the Monitor app, moved from Reach: handset sign-in (Google, Microsoft, Facebook or password), sealed push alerts over Firebase, acknowledgement, replies and the member directory, all under `sentinel/v1`. Optional: it boots only when Unity is active, needs Scrutiny for audit logging, and stands down with `SENTINEL_MONITOR_KILL`. Configured under **Sentinel → Monitor Settings**.
+- **Error alerts** — when an error (or a PHP fatal) is logged, the Monitor handsets an admin has opted in on **Sentinel → Monitor Devices** are paged. One alert per distinct error, with a cooldown and an hourly cap; repeats are counted and reported. Only the channel, level, message and file are sent, never the log context. Works when Unity is down.
 - **Lightweight** — minimal footprint; a single dashboard widget class with bundled CSS and JS.
 
 ---
