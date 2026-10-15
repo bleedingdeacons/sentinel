@@ -481,3 +481,41 @@ test('platform normalisation', function (string $claimed, string $expected) {
     // never receives anything.
     $this->assertSame($expected, Device::normalisePlatform($claimed));
 })->with('platforms');
+
+test('the error alert list is live, opted-in handsets only', function () {
+    $db = new WpdbStub();
+    $db->nextResults = [row(['error_alerts' => '1'])];
+    $repo = new WpdbDeviceRepository($db);
+
+    $targets = $repo->findErrorAlertTargets();
+
+    $this->assertCount(1, $targets);
+    $this->assertTrue($targets[0]->errorAlerts);
+    $this->assertStringContainsString('WHERE revoked_at IS NULL AND error_alerts = 1', $db->queries[0]);
+});
+
+test('a row written before the opt-in existed reads as opted out', function () {
+    $db = new WpdbStub();
+    $db->nextResults = [row()];
+
+    $this->assertFalse((new WpdbDeviceRepository($db))->findAllLive()[0]->errorAlerts);
+});
+
+test('setting the opt-in writes only that column', function () {
+    $db = new WpdbStub();
+    $db->nextRow = row();
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertTrue($repo->setErrorAlerts(7, true));
+
+    $this->assertSame(['error_alerts' => 1], $db->updated[0]['data']);
+    $this->assertSame(['id' => 7], $db->updated[0]['where']);
+});
+
+test('an unknown handset cannot be opted in', function () {
+    $db = new WpdbStub();
+    $db->nextRow = null;
+
+    $this->assertFalse((new WpdbDeviceRepository($db))->setErrorAlerts(99, true));
+    $this->assertSame([], $db->updated);
+});

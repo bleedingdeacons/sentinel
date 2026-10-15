@@ -509,6 +509,9 @@ final class Sentinel_Logger
 
     // ── Shutdown Handler ──
 
+    /** Set once the fatal this request died on has been recorded. */
+    private bool $fatalCaptured = false;
+
     /**
      * Flush any remaining buffered entries and capture fatal errors.
      */
@@ -518,6 +521,27 @@ final class Sentinel_Logger
         $this->flush();
 
         // 2. Capture fatal errors.
+        $this->captureFatal();
+    }
+
+    /**
+     * Record the fatal error this request died on, once.
+     *
+     * Called from handleShutdown() and, before that, from the wp_die()
+     * wrapper below. The second call is the one that usually matters.
+     * WordPress's own fatal error handler is registered at shutdown before
+     * this logger exists, and it ends in wp_die(), which exits, and an exit
+     * inside a shutdown function cancels every shutdown function after it,
+     * this logger's included. So with WordPress's handler enabled (the
+     * default) a fatal used to leave only the wp_die() entry behind and
+     * never itself.
+     */
+    public function captureFatal(): void
+    {
+        if ($this->fatalCaptured) {
+            return;
+        }
+
         $error = error_get_last();
         if ($error === null) {
             return;
@@ -526,6 +550,14 @@ final class Sentinel_Logger
         $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
         if (!in_array($error['type'], $fatalTypes, true)) {
             return;
+        }
+
+        $this->fatalCaptured = true;
+
+        // A request that died of memory exhaustion is still under the same
+        // limit, and recording the fatal needs some of it.
+        if (str_contains($error['message'], 'Allowed memory size') && function_exists('wp_raise_memory_limit')) {
+            wp_raise_memory_limit('admin');
         }
 
         global $wpdb;
@@ -558,6 +590,21 @@ final class Sentinel_Logger
             ],
             ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
         );
+
+        /**
+         * Action: a fatal error was recorded. Fatals bypass dispatch(), so
+         * sentinel_logger_after_write never sees them; this is the hook that
+         * does. Same arguments, in the same order, with the channel in the
+         * context as `_channel`.
+         */
+        if (function_exists('do_action')) {
+            do_action('sentinel_logger_fatal', 'emergency', 'Fatal: ' . $error['message'], [
+                '_channel' => 'php',
+                'file'     => $error['file'],
+                'line'     => $error['line'],
+                'type'     => $error['type'],
+            ]);
+        }
     }
 }
 
@@ -716,6 +763,12 @@ if ($sentinel_capture_errors) {
 
     add_filter('wp_die_handler', function ($handler) {
         return function ($message, $title = '', $args = []) use ($handler) {
+
+            // When this wp_die() is WordPress's fatal error page, the fatal
+            // has to be recorded now: the exit below cancels the shutdown
+            // handler that would otherwise record it. A no-op for every
+            // other wp_die(), which has no fatal pending.
+            Sentinel_Logger::instance()->captureFatal();
 
             wp_log('wp')->critical(
                 'wp_die: {message}',

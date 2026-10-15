@@ -124,6 +124,13 @@ final class DevicesPage
      */
     public const REVOKE_ACTION = 'sentinel_monitor_revoke_device';
     public const REMOVE_ACTION = 'sentinel_monitor_remove_device';
+
+    /**
+     * Opt a handset in to, or out of, alerts raised when an error is
+     * logged. Behind the manage capability, as revoking is: both decide
+     * whose phone does what.
+     */
+    public const ERROR_ALERTS_ACTION = 'sentinel_monitor_error_alerts';
     private const TEST_ALERT_ACTION = 'sentinel_monitor_send_test_alert';
 
     /**
@@ -196,6 +203,7 @@ final class DevicesPage
         add_action('admin_menu', [$this, 'addMenu'], 20);
         add_action('admin_post_' . self::REVOKE_ACTION, [$this, 'handleRevoke']);
         add_action('admin_post_' . self::REMOVE_ACTION, [$this, 'handleRemove']);
+        add_action('admin_post_' . self::ERROR_ALERTS_ACTION, [$this, 'handleErrorAlerts']);
         add_action('admin_post_' . self::TEST_ALERT_ACTION, [$this, 'handleTestAlert']);
         add_action('wp_ajax_' . self::ALERTS_REFRESH_ACTION, [$this, 'handleRecentAlerts']);
         add_action('wp_ajax_' . self::HANDSETS_REFRESH_ACTION, [$this, 'handleHandsets']);
@@ -755,6 +763,39 @@ final class DevicesPage
         return $this->resultUrl($revoked ? 'revoked' : 'revoke_failed');
     }
 
+    public function handleErrorAlerts(): void
+    {
+        if (!current_user_can(self::MANAGE_CAPABILITY)) {
+            wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
+        }
+
+        wp_safe_redirect($this->errorAlertsFromRequest());
+        exit;
+    }
+
+    /**
+     * Apply the error-alert toggle POST and return where the browser goes
+     * next. Split out of {@see handleErrorAlerts()} for the same reason as
+     * {@see revokeFromRequest()}.
+     *
+     * A revoked handset is refused: it can never be reached, so opting it
+     * in would show an admin a subscriber that does not exist.
+     */
+    private function errorAlertsFromRequest(): string
+    {
+        $deviceId = (int) ($_POST['device_id'] ?? 0);
+        check_admin_referer(self::ERROR_ALERTS_ACTION . '_' . $deviceId);
+
+        $enable = isset($_POST['enable']) && $_POST['enable'] === '1';
+        $device = $deviceId > 0 ? $this->devices->findById($deviceId) : null;
+
+        if ($device === null || $device->isRevoked() || !$this->devices->setErrorAlerts($deviceId, $enable)) {
+            return $this->resultUrl('error_alerts_failed');
+        }
+
+        return $this->resultUrl($enable ? 'error_alerts_on' : 'error_alerts_off');
+    }
+
     public function handleRemove(): void
     {
         if (!current_user_can(self::MANAGE_CAPABILITY)) {
@@ -1009,6 +1050,9 @@ final class DevicesPage
             'test_none_selected' => ['warning', 'Tick at least one live handset before sending to a selection.'],
             'test_no_scope' => ['warning', 'Choose "Send test alert" from the bulk actions, or use the button to send to every live handset.'],
             'test_failed'   => ['error', 'The test alert could not be sent. Check the Sentinel log for the reason.'],
+            'error_alerts_on'  => ['success', 'This handset will now be alerted when an error is logged on the site.'],
+            'error_alerts_off' => ['success', 'This handset will no longer be alerted about logged errors.'],
+            'error_alerts_failed' => ['error', 'That handset could not be changed — it may have been revoked or removed.'],
         ];
 
         $key = isset($_GET['sentinel_monitor_result']) && is_string($_GET['sentinel_monitor_result'])

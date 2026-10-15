@@ -267,6 +267,35 @@ final class WpdbDeviceRepository implements DeviceRepository
         return $this->hydrateAll($rows);
     }
 
+    public function findErrorAlertTargets(): array
+    {
+        $table = self::tableName($this->wpdb);
+        $rows = $this->wpdb->get_results(
+            "SELECT {$this->columns()} FROM {$table} WHERE revoked_at IS NULL AND error_alerts = 1 ORDER BY id ASC",
+            ARRAY_A,
+        );
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function setErrorAlerts(int $id, bool $enabled): bool
+    {
+        if ($this->findById($id) === null) {
+            return false;
+        }
+
+        $updated = $this->wpdb->update(
+            self::tableName($this->wpdb),
+            ['error_alerts' => $enabled ? 1 : 0],
+            ['id' => $id],
+            ['%d'],
+            ['%d'],
+        );
+
+        // An unchanged value updates zero rows, which is still a success.
+        return $updated !== false;
+    }
+
     public function list(
         int $limit,
         int $offset,
@@ -516,7 +545,7 @@ final class WpdbDeviceRepository implements DeviceRepository
     {
         return 'id, token_hash, member_email, member_id, label, platform, '
             . 'push_provider, push_token, created_at, last_seen_at, revoked_at, '
-            . 'key_fault_at, lock_screen';
+            . 'key_fault_at, lock_screen, error_alerts';
     }
 
     /**
@@ -549,6 +578,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             $row['revoked_at'] !== null ? (int) $row['revoked_at'] : null,
             ($row['key_fault_at'] ?? null) !== null ? (int) $row['key_fault_at'] : null,
             (string) ($row['lock_screen'] ?? ''),
+            (int) ($row['error_alerts'] ?? 0) === 1,
         );
     }
 }

@@ -35,6 +35,8 @@ use Sentinel\Monitor\Auth\StateStore;
 use Sentinel\Monitor\Devices\CurrentDevice;
 use Sentinel\Monitor\Devices\DeviceRepository;
 use Sentinel\Monitor\Devices\ResponderGate;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertSender;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertSettings;
 use Sentinel\Monitor\MonitorServices;
 use Sentinel\Monitor\Rest\AlertController;
 use Sentinel\Monitor\Rest\DeviceAuthController;
@@ -77,6 +79,8 @@ final class MonitorServiceProvider
         $container->register(AlertReplyRepository::class, fn() => MonitorServices::alertReplies());
         $container->register(FcmClient::class, fn() => MonitorServices::fcmClient());
         $container->register(FcmTransport::class, fn() => MonitorServices::fcmTransport());
+        $container->register(ErrorAlertSettings::class, fn() => MonitorServices::errorAlertSettings());
+        $container->register(ErrorAlertSender::class, fn() => MonitorServices::errorAlertSender());
 
         $container->register(RateLimiter::class, fn() => new RateLimiter());
         $container->register(StateStore::class, fn() => new StateStore());
@@ -192,6 +196,8 @@ final class MonitorServiceProvider
         // Admin.
         $container->register(SettingsPage::class, fn(ContainerInterface $c) => new SettingsPage(
             $c->get(Settings::class),
+            $c->get(ErrorAlertSettings::class),
+            $c->get(ErrorAlertSender::class),
         ));
 
         $container->register(DevicesPage::class, fn(ContainerInterface $c) => new DevicesPage(

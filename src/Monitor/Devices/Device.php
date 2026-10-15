@@ -73,7 +73,38 @@ final class Device
          * own Android setting, not anything Sentinel or the app controls.
          */
         public readonly string $lockScreen = self::LOCK_SCREEN_UNKNOWN,
+        /**
+         * Whether an admin has opted this handset in to alerts raised when
+         * an error is logged on the site.
+         *
+         * Off by default and set only from the admin devices screen. Being
+         * able to sign in is not the same as wanting to be paged about a
+         * PHP error at three in the morning: responders carry these phones
+         * for the helpline, and the error alerts are for whoever looks
+         * after the site.
+         */
+        public readonly bool $errorAlerts = false,
     ) {
+    }
+
+    /** A copy with the error-alert opt-in set as given. */
+    public function withErrorAlerts(bool $errorAlerts): self
+    {
+        return new self(
+            $this->id,
+            $this->memberEmail,
+            $this->memberId,
+            $this->label,
+            $this->platform,
+            $this->pushProvider,
+            $this->pushToken,
+            $this->createdAt,
+            $this->lastSeenAt,
+            $this->revokedAt,
+            $this->keyFaultAt,
+            $this->lockScreen,
+            $errorAlerts,
+        );
     }
 
     /**
