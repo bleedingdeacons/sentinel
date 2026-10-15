@@ -3,8 +3,8 @@
 /**
  * Plugin Name: Sentinel
  * Description: Dashboard displaying the Intergroup plugin(s) status, the suite's shared logger, and the server side of the Monitor app (optional; needs Unity and Scrutiny).
- * Version: 3.0.5
- * Build date: 2026/09/24 03:05:24
+ * Version: 3.1.0
+ * Build date: 2026/10/15 19:26:30
  * Requires at least: 6.0
  * Requires PHP: 8.4
  * GitHub Plugin URI: https://github.com/bleedingdeacons/sentinel
