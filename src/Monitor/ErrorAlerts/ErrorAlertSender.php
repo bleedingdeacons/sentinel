@@ -62,7 +62,6 @@ final class ErrorAlertSender
         private readonly DeviceRepository $devices,
         private readonly AlertRepository $alerts,
         private readonly AlertTransport $transport,
-        private readonly ErrorAlertSettings $settings,
     ) {
     }
 
@@ -70,11 +69,17 @@ final class ErrorAlertSender
      * Store and push one alert for an error.
      *
      * @param int $suppressed Repeats held back since this error last paged.
+     * @param string $handsetLevel Red, yellow or blue: the alert of the rule
+     *     the error matched. Anything else is sent blue.
      * @return int How many handsets it was stored for. Zero when none is
      *     opted in.
      */
-    public function send(LoggedError $error, int $suppressed, int $now): int
+    public function send(LoggedError $error, int $suppressed, int $now, string $handsetLevel = Alert::LEVEL_BLUE): int
     {
+        if (!in_array($handsetLevel, Alert::LEVELS, true)) {
+            $handsetLevel = Alert::LEVEL_BLUE;
+        }
+
         $targets = $this->devices->findErrorAlertTargets();
         if ($targets === []) {
             return 0;
@@ -85,7 +90,7 @@ final class ErrorAlertSender
         $pushed = 0;
 
         foreach ($targets as $device) {
-            $request = $this->requestFor($error, $suppressed, $device, $messageUuid);
+            $request = $this->requestFor($error, $suppressed, $device, $messageUuid, $handsetLevel);
             if ($request instanceof WP_Error) {
                 self::logWarning('Error alert could not be built', ['reason' => $request->get_error_message()]);
                 return $stored;
@@ -102,6 +107,7 @@ final class ErrorAlertSender
         self::logInfo('Error alert sent', [
             'channel'    => $error->channel,
             'level'      => $error->level,
+            'alert'      => $handsetLevel,
             'handsets'   => $stored,
             'pushed'     => $pushed,
             'suppressed' => $suppressed,
@@ -110,15 +116,20 @@ final class ErrorAlertSender
         return $stored;
     }
 
-    private function requestFor(LoggedError $error, int $suppressed, Device $device, string $messageUuid): AlertRequest|WP_Error
-    {
+    private function requestFor(
+        LoggedError $error,
+        int $suppressed,
+        Device $device,
+        string $messageUuid,
+        string $handsetLevel,
+    ): AlertRequest|WP_Error {
         return AlertRequest::fromArray([
             'kind'             => self::KIND,
             'source'           => self::SOURCE,
             'title'            => sprintf('[%s] %s', $error->channel, strtoupper($error->level)),
             'body'             => $this->body($error, $suppressed),
             'reference'        => substr($error->fingerprint(), 0, 12),
-            'level'            => $this->settings->handsetLevelFor($error->level),
+            'level'            => $handsetLevel,
             'response'         => Alert::RESPONSE_NONE,
             'target_device_id' => $device->id,
             'message_uuid'     => $messageUuid,

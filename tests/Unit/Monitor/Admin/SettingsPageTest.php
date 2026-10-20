@@ -6,10 +6,12 @@ namespace Sentinel\Tests\Monitor;
 
 use function Brain\Monkey\Functions\when;
 
+use BleedingDeacons\WpMocks\Doubles\FakeWpdb;
 use BleedingDeacons\WpMocks\WpState;
 use ReflectionMethod;
 use Sentinel\Monitor\Admin\SettingsPage;
 use Sentinel\Monitor\Core\Settings;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertRule;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSender;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSettings;
 use Sentinel\Tests\Monitor\Fixtures\InMemoryAlertRepository;
@@ -48,7 +50,7 @@ beforeEach(function () {
     $this->page = new SettingsPage(
         new Settings(),
         $this->errorAlerts,
-        new ErrorAlertSender($this->devices, $this->alerts, new RecordingTransport(), $this->errorAlerts),
+        new ErrorAlertSender($this->devices, $this->alerts, new RecordingTransport()),
     );
 
     $this->render = function (): string {
@@ -62,30 +64,63 @@ beforeEach(function () {
     };
 });
 
-test('the page shows the error alert settings', function () {
+test('the page shows the error alert rules, with blank rows to add more', function () {
     $html = ($this->render)();
 
     $this->assertStringContainsString('<h2>Error alerts</h2>', $html);
-    $this->assertStringContainsString('name="error_alerts[threshold]"', $html);
-    $this->assertStringContainsString('value="wp, monitor"', $html);
+    $this->assertStringContainsString('<h3>Rules</h3>', $html);
+
+    // Six default rules, then the two blank rows.
+    $this->assertStringContainsString('name="error_alerts[rules][5][channel]"', $html);
+    $this->assertStringContainsString('name="error_alerts[rules][7][level]"', $html);
+    $this->assertStringNotContainsString('name="error_alerts[rules][8][level]"', $html);
+    $this->assertSame(2, substr_count($html, 'Add a rule'));
+    $this->assertSame(6, substr_count($html, 'Remove this rule'));
+
+    $this->assertStringContainsString('value="monitor"', $html);
+    $this->assertMatchesRegularExpression('/<option value="debug"\s+selected/', $html);
+    $this->assertMatchesRegularExpression('/<option value="off"\s+selected/', $html);
+    $this->assertMatchesRegularExpression("/Don(&#0?39;|')t alert/", $html);
     $this->assertStringContainsString(SettingsPage::TEST_ERROR_ALERT_ACTION, $html);
 });
 
-test('saving the form saves the error alert settings', function () {
+test('the plugin field suggests the channels the log has seen', function () {
+    $previous = $GLOBALS['wpdb'] ?? null;
+    $GLOBALS['wpdb'] = $wpdb = new FakeWpdb();
+    $wpdb->col = ['concordance', 'unity', 'Unity'];
+
+    try {
+        $html = ($this->render)();
+    } finally {
+        $GLOBALS['wpdb'] = $previous;
+    }
+
+    $this->assertStringContainsString('<datalist id="sentinel_monitor_error_channels">', $html);
+    $this->assertStringContainsString('<option value="concordance">', $html);
+    $this->assertSame(1, substr_count($html, '<option value="unity">'));
+    $this->assertStringContainsString('<option value="php">', $html);
+    $this->assertStringContainsString('SELECT DISTINCT channel FROM `wp_sentinel_log_entries`', $wpdb->queries[0]);
+});
+
+test('saving the form saves the error alert rules', function () {
     $_POST = ['error_alerts' => [
-        'threshold'         => 'critical',
-        'excluded_channels' => 'wp',
-        'cooldown_minutes'  => '30',
-        'hourly_cap'        => '5',
+        'hourly_cap' => '5',
+        'rules'      => [
+            ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '30'],
+            ['channel' => 'wp', 'level' => 'debug', 'alert' => 'off', 'timeout_minutes' => '0', 'remove' => '1'],
+            ['channel' => 'unity', 'level' => 'critical', 'alert' => 'red', 'timeout_minutes' => '5'],
+            ['channel' => '', 'level' => '', 'alert' => 'blue', 'timeout_minutes' => '15'],
+        ],
     ]];
 
     settingsPageCall($this->page, 'saveFromRequest');
 
     // The box was unticked, so it was not sent at all.
     $this->assertFalse($this->errorAlerts->isEnabled());
-    $this->assertSame('critical', $this->errorAlerts->threshold());
-    $this->assertSame(['wp'], $this->errorAlerts->excludedChannels());
-    $this->assertSame(30, $this->errorAlerts->cooldownMinutes());
+    $this->assertSame([
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => 30],
+        ['channel' => 'unity', 'level' => 'critical', 'alert' => 'red', 'timeout_minutes' => 5],
+    ], array_map(fn (ErrorAlertRule $r): array => $r->toArray(), $this->errorAlerts->rules()));
     $this->assertSame(5, $this->errorAlerts->hourlyCap());
 });
 

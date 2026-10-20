@@ -99,7 +99,6 @@ final class MonitorServices
             self::devices(),
             self::alerts(),
             self::fcmTransport(),
-            self::errorAlertSettings(),
         );
     }
 

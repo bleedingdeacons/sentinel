@@ -13,10 +13,11 @@ if (!defined('ABSPATH')) {
  *
  * Two limits, both held in transients so they hold across requests:
  *
- *  - **A cooldown per distinct error.** An error that logs on every page load
- *    would otherwise page on every page load. While its cooldown runs,
- *    repeats are counted rather than sent, and the next alert for it carries
- *    the count ("+12 similar"), so a quiet phone never means a quiet site.
+ *  - **A timeout per distinct error**, set by the rule the error matched. An
+ *    error that logs on every page load would otherwise page on every page
+ *    load. While its timeout runs, repeats are counted rather than sent, and
+ *    the next alert for it carries the count ("+12 similar"), so a quiet
+ *    phone never means a quiet site.
  *  - **An hourly cap across all errors**, for the day something breaks in a
  *    hundred different ways at once. Errors over the cap are counted against
  *    their own fingerprint the same way, so none is lost from the tally.
@@ -30,8 +31,8 @@ final class ErrorAlertThrottle
     private const HOUR_PREFIX = 'sentinel_monitor_ea_hour_';
 
     /**
-     * Kept well past any cooldown, so a count of suppressed repeats is still
-     * there to report when the cooldown has run out.
+     * Kept well past any timeout, so a count of suppressed repeats is still
+     * there to report when the timeout has run out.
      */
     private const RECORD_TTL = 2 * DAY_IN_SECONDS;
 
@@ -42,20 +43,23 @@ final class ErrorAlertThrottle
     /**
      * Admit one occurrence of an error, or count it as suppressed.
      *
+     * @param int $timeoutSeconds How long the error is held back after it
+     *     has paged: the timeout of the rule it matched. Zero sends every
+     *     occurrence.
      * @param int $repeats Further occurrences of the same error in this
      *     request, folded in before deciding; they are never sent separately.
      * @return int|null Null when this occurrence must not be sent. Otherwise
      *     how many repeats were held back since this error last paged, to
      *     report alongside it.
      */
-    public function admit(string $fingerprint, int $now, int $repeats = 0): ?int
+    public function admit(string $fingerprint, int $now, int $timeoutSeconds, int $repeats = 0): ?int
     {
         $key = self::COOLDOWN_PREFIX . $fingerprint;
         $record = $this->record($key);
 
-        // Measured from when it last paged, against the cooldown as it is
-        // set now, so shortening the setting takes effect at once.
-        if ($record['sent_at'] > 0 && $now < $record['sent_at'] + $this->settings->cooldownSeconds()) {
+        // Measured from when it last paged, against the timeout as it is set
+        // now, so shortening a rule's timeout takes effect at once.
+        if ($record['sent_at'] > 0 && $now < $record['sent_at'] + max(0, $timeoutSeconds)) {
             $this->store($key, $record['sent_at'], $record['suppressed'] + 1 + $repeats);
             return null;
         }
@@ -63,7 +67,7 @@ final class ErrorAlertThrottle
         $hourKey = self::HOUR_PREFIX . intdiv($now, HOUR_IN_SECONDS);
         $sentThisHour = (int) get_transient($hourKey);
         if ($sentThisHour >= $this->settings->hourlyCap()) {
-            // Not a cooldown: the error may page as soon as the cap allows.
+            // Not a timeout: the error may page as soon as the cap allows.
             $this->store($key, $record['sent_at'], $record['suppressed'] + 1 + $repeats);
             return null;
         }
