@@ -12,6 +12,7 @@ use Guardian\ProviderRegistry;
 use Sentinel\Monitor\Auth\DeviceCodeStore;
 use Sentinel\Monitor\Auth\DeviceRedirectValidator;
 use Sentinel\Monitor\Auth\DeviceTokenMinter;
+use Sentinel\Monitor\Auth\FirebaseSignIn;
 use Sentinel\Monitor\Auth\PasswordAuthenticator;
 use Sentinel\Monitor\Auth\StateStore;
 use Sentinel\Monitor\Core\RateLimiter;
@@ -50,6 +51,13 @@ use function rest_url;
  *   than the token, travels through the browser — see
  *   {@see DeviceCodeStore} for why that distinction matters.
  *
+ *   Native Google — on Android and iOS Monitor shows the platform's own
+ *   account picker, signs in to Firebase Auth with the result, and posts
+ *   the Firebase ID token to `/auth/device/firebase`. No browser and no
+ *   custom scheme; {@see FirebaseSignIn} pins the token to Sentinel's own
+ *   Firebase project. The SSO path stays for the other providers, for
+ *   the Windows head, and for a Monitor older than this route.
+ *
  *   Password — Monitor posts credentials straight to
  *   `/auth/device/password`. No browser, no redirect, no custom scheme.
  *   This is what the Windows head uses when it is not packaged as MSIX
@@ -60,13 +68,14 @@ use function rest_url;
  *
  *   GET  /sentinel/v1/auth/device/start?provider=&redirect_uri=
  *   POST /sentinel/v1/auth/device/exchange   { code, label, platform, ... }
+ *   POST /sentinel/v1/auth/device/firebase   { id_token, label, platform, ... }
  *   POST /sentinel/v1/auth/device/password   { email, password, label, platform, ... }
- *   POST /sentinel/v1/auth/device/push       { push_provider, push_token,
+ *   POST /sentinel/v1/auth/device/push      { push_provider, push_token,
  *                                          lock_screen? }                [Bearer]
  *   GET  /sentinel/v1/auth/device/session                                    [Bearer]
  *   POST /sentinel/v1/auth/device/signout                                    [Bearer]
  *
- * The first three are public — they *are* the auth surface. The last
+ * The first four are public — they *are* the auth surface. The last
  * three authenticate with the device token itself.
  */
 final class DeviceAuthController
@@ -114,6 +123,7 @@ final class DeviceAuthController
         private readonly StateStore $stateStore,
         private readonly RateLimiter $rateLimiter,
         private readonly AuditLogger $auditLogger,
+        private readonly ?FirebaseSignIn $firebase = null,
     ) {
     }
 
@@ -162,6 +172,22 @@ final class DeviceAuthController
                         'required'          => true,
                         'sanitize_callback' => 'sanitize_text_field',
                     ],
+                ]),
+            ]
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/auth/device/firebase',
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [$this, 'firebase'],
+                'permission_callback' => '__return_true',
+                // Not sanitised as text: a JWT is checked byte for byte
+                // against its signature, and anything that altered it
+                // could only turn a good token into a refused one.
+                'args'                => $this->enrolmentArgs([
+                    'id_token' => ['type' => 'string', 'required' => true],
                 ]),
             ]
         );
@@ -353,6 +379,49 @@ final class DeviceAuthController
         }
 
         return $this->enrol($request, $member, $identity->provider);
+    }
+
+    /**
+     * Enrol a handset with a Firebase ID token from native Google sign-in.
+     *
+     * Refusals are kept apart because Monitor acts on each differently:
+     * 503 means this intergroup has not set native sign-in up, and the
+     * app falls back to the browser; 401 means the token itself was no
+     * good; 403 is the same "not certified" every other path gives.
+     */
+    public function firebase(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
+        if ($this->overEnrolmentLimit()) {
+            return $this->tooManyAttempts();
+        }
+
+        if ($this->firebase === null || !$this->firebase->isConfigured()) {
+            return new WP_Error(
+                'sentinel_firebase_unavailable',
+                'Google sign-in on this device is not set up for this intergroup.',
+                ['status' => 503],
+            );
+        }
+
+        $identity = $this->firebase->verify((string) $request->get_param('id_token'));
+        if ($identity === null) {
+            return new WP_Error(
+                'sentinel_invalid_id_token',
+                'Google sign-in could not be confirmed. Please try again.',
+                ['status' => 401],
+            );
+        }
+
+        $member = $this->gate->authorisedMember($identity->email);
+        if ($member === null) {
+            return $this->notEligible();
+        }
+
+        return $this->enrol($request, $member, $identity->provider . ' (native)');
     }
 
     /**
