@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\Firebase\FirebaseIdTokenVerifier;
 use Guardian\Jwt\JwtVerifier;
 use Guardian\ProviderRegistry;
 use Guardian\Providers\FacebookProvider;
@@ -25,11 +26,13 @@ use Sentinel\Monitor\Alerts\AlertDispatcher;
 use Sentinel\Monitor\Alerts\AlertReplyRepository;
 use Sentinel\Monitor\Alerts\AlertRepository;
 use Sentinel\Monitor\Alerts\Fcm\FcmClient;
+use Sentinel\Monitor\Alerts\Fcm\ServiceAccount;
 use Sentinel\Monitor\Alerts\RecipientResolver;
 use Sentinel\Monitor\Alerts\Transport\FcmTransport;
 use Sentinel\Monitor\Auth\DeviceCodeStore;
 use Sentinel\Monitor\Auth\DeviceRedirectValidator;
 use Sentinel\Monitor\Auth\DeviceTokenMinter;
+use Sentinel\Monitor\Auth\FirebaseSignIn;
 use Sentinel\Monitor\Auth\PasswordAuthenticator;
 use Sentinel\Monitor\Auth\StateStore;
 use Sentinel\Monitor\Devices\CurrentDevice;
@@ -139,6 +142,16 @@ final class MonitorServiceProvider
             return $registry;
         });
 
+        // Native Google sign-in, pinned to the project Sentinel already
+        // pushes through. See FirebaseSignIn on why that is the right one.
+        $container->register(FirebaseSignIn::class, function (ContainerInterface $c) {
+            $settings = $c->get(Settings::class);
+            return new FirebaseSignIn(
+                new FirebaseIdTokenVerifier($c->get(self::JWT_VERIFIER), 'monitor'),
+                static fn(): string => ServiceAccount::fromJson($settings->getFcmServiceAccount())?->projectId ?? '',
+            );
+        });
+
         // The credential store is Unity's and is deliberately not
         // registered here: tsml-for-unity supplies it, and a member has
         // one password whichever plugin they sign in through.
@@ -169,6 +182,7 @@ final class MonitorServiceProvider
             $c->get(StateStore::class),
             $c->get(RateLimiter::class),
             $c->get(AuditLogger::class),
+            $c->get(FirebaseSignIn::class),
         ));
 
         $container->register(AlertController::class, fn(ContainerInterface $c) => new AlertController(
