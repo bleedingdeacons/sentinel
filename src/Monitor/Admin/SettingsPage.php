@@ -10,8 +10,10 @@ if (!defined('ABSPATH')) {
 
 use Guardian\Admin\ProviderCredentialsSection;
 use Guardian\Admin\ProviderField;
+use Sentinel\Monitor\Alerts\Alert;
 use Sentinel\Monitor\Alerts\Fcm\ServiceAccount;
 use Sentinel\Monitor\Core\Settings;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertRule;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSender;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSettings;
 use Sentinel\Monitor\ErrorAlerts\LoggedError;
@@ -28,8 +30,9 @@ use Sentinel\Plugin;
  *     critical-alert switch.
  *
  *   - Error alerts — whether a logged error pages the handsets opted in on
- *     the devices screen, from which level, how loudly, and how often; and a
- *     button that sends a test one.
+ *     the devices screen, and the rules that say which plugins and levels
+ *     do, how loudly, and how often the same one may repeat; and a button
+ *     that sends a test one.
  *
  *   - Authentication — Google, Microsoft and Facebook, rendered and saved by
  *     Guardian's ProviderCredentialsSection: a client ID field and a
@@ -47,12 +50,16 @@ final class SettingsPage
     public const TEST_ERROR_ALERT_ACTION = 'sentinel_monitor_test_error_alert';
     private const CAPABILITY = 'manage_options';
 
-    /** How each handset level reads in the level-map selects. */
-    private const HANDSET_LEVEL_LABELS = [
-        'red'    => 'Red — alarm, loops until answered',
-        'yellow' => 'Yellow — notification',
-        'blue'   => 'Blue — quiet notice',
+    /** How each alert reads in the rules' selects. */
+    private const ALERT_LABELS = [
+        Alert::LEVEL_RED    => 'Red — alarm, loops until answered',
+        Alert::LEVEL_YELLOW => 'Yellow — notification',
+        Alert::LEVEL_BLUE   => 'Blue — quiet notice',
+        ErrorAlertRule::OFF => 'Don\'t alert',
     ];
+
+    /** Blank rows under the rules, for adding new ones without script. */
+    private const BLANK_RULE_ROWS = 2;
 
     public function __construct(
         private readonly Settings $settings,
@@ -190,7 +197,7 @@ final class SettingsPage
             <p>
                 Sends one blue alert, as a logged error would, to every handset opted in on
                 <a href="<?php echo esc_url(add_query_arg('page', DevicesPage::PAGE_SLUG, admin_url('admin.php'))); ?>">Monitor Devices</a>.
-                It skips the cooldown and the hourly cap, so it always goes.
+                It skips the rules, their timeouts and the hourly cap, so it always goes.
             </p>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <input type="hidden" name="action" value="<?php echo esc_attr(self::TEST_ERROR_ALERT_ACTION); ?>">
@@ -302,12 +309,13 @@ final class SettingsPage
     private function renderErrorAlerts(): void
     {
         $settings = $this->errorAlerts;
+        $rules = $settings->rules();
         ?>
         <h2>Error alerts</h2>
         <p>
             Pages the handsets opted in on
             <a href="<?php echo esc_url(add_query_arg('page', DevicesPage::PAGE_SLUG, admin_url('admin.php'))); ?>">Monitor Devices</a>
-            when an error is logged on this site, including PHP fatals. No handset is opted in until you
+            when a log entry matches one of the rules below, including PHP fatals. No handset is opted in until you
             turn it on there. Only the channel, level, message and file are sent &mdash; never the log entry's
             context &mdash; but the message is whatever the code that logged it wrote.
         </p>
@@ -317,8 +325,8 @@ final class SettingsPage
             </p></div>
         <?php elseif ($settings->loggerDropsThreshold()) : ?>
             <div class="notice notice-warning inline"><p>
-                The logger is set to record less than the level below (<code>SENTINEL_LOG_LEVEL</code>), so
-                some of the errors that should raise an alert are never written and never will.
+                The logger is set to record less than the rules below alert on (<code>SENTINEL_LOG_LEVEL</code>), so
+                some of the entries that should raise an alert are never written and never will.
             </p></div>
         <?php endif; ?>
         <table class="form-table">
@@ -327,73 +335,175 @@ final class SettingsPage
                 <td>
                     <label>
                         <input type="checkbox" name="error_alerts[enabled]" value="1" <?php checked($settings->isEnabled()); ?>>
-                        Alert opted-in handsets when an error is logged
+                        Alert opted-in handsets when a log entry matches a rule
                     </label>
                 </td>
             </tr>
-            <tr>
-                <th><label for="sentinel_monitor_error_threshold">From level</label></th>
-                <td>
-                    <select id="sentinel_monitor_error_threshold" name="error_alerts[threshold]">
-                        <?php foreach (ErrorAlertSettings::LEVELS as $level) : ?>
-                            <option value="<?php echo esc_attr($level); ?>" <?php selected($settings->threshold(), $level); ?>>
-                                <?php echo esc_html(ucfirst($level) . ' and above'); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </td>
-            </tr>
-            <tr>
-                <th>Shown on the handset as</th>
-                <td>
-                    <?php foreach ($settings->levelMap() as $logLevel => $handsetLevel) : ?>
-                        <p>
-                            <label>
-                                <span style="display:inline-block;min-width:6em;"><?php echo esc_html(ucfirst($logLevel)); ?></span>
-                                <select name="error_alerts[level_map][<?php echo esc_attr($logLevel); ?>]">
-                                    <?php foreach (self::HANDSET_LEVEL_LABELS as $value => $label) : ?>
-                                        <option value="<?php echo esc_attr($value); ?>" <?php selected($handsetLevel, $value); ?>>
-                                            <?php echo esc_html($label); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
-                        </p>
-                    <?php endforeach; ?>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="sentinel_monitor_error_excluded">Never alert for channels</label></th>
-                <td>
-                    <input type="text" id="sentinel_monitor_error_excluded" class="regular-text"
-                           name="error_alerts[excluded_channels]"
-                           value="<?php echo esc_attr(implode(', ', $settings->excludedChannels())); ?>">
-                    <p class="description">
-                        Comma-separated log channels. <code>wp</code> is every <code>wp_die()</code>, routine
-                        permission refusals included. <code>monitor</code> is this module&rsquo;s own channel; leaving it
-                        out means a failed push could page someone about the paging.
-                    </p>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="sentinel_monitor_error_cooldown">Repeat the same error after</label></th>
-                <td>
-                    <input type="number" min="0" max="1440" id="sentinel_monitor_error_cooldown" class="small-text"
-                           name="error_alerts[cooldown_minutes]"
-                           value="<?php echo esc_attr((string) $settings->cooldownMinutes()); ?>"> minutes
-                    <p class="description">Repeats in between are counted, and the next alert says how many.</p>
-                </td>
-            </tr>
+        </table>
+
+        <h3>Rules</h3>
+        <p>
+            Each rule covers one plugin&rsquo;s log channel, or <code>*</code> for any plugin, from a level upwards.
+            A log entry takes its own plugin&rsquo;s rule when one covers its level, and the <code>*</code> rules
+            otherwise; of those, the rule with the most severe level it reaches wins. So
+            <code>*</code>&nbsp;from&nbsp;Error alongside <code>unity</code>&nbsp;from&nbsp;Critical alerts every
+            plugin&rsquo;s errors, and rings Unity&rsquo;s critical ones the way that rule says.
+            <strong>Don&rsquo;t alert</strong> silences everything a rule covers.
+        </p>
+        <p>
+            <strong>Timeout</strong> is how long the same error is held back after it has paged. Repeats in between
+            are counted, and the next alert says how many. Use the blank rows to add rules; save to get more.
+        </p>
+        <table class="widefat striped sentinel-error-alert-rules" style="max-width:56em;">
+            <thead>
+                <tr>
+                    <th scope="col">Plugin</th>
+                    <th scope="col">From level</th>
+                    <th scope="col">Alert</th>
+                    <th scope="col">Timeout</th>
+                    <th scope="col">Remove</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                $index = 0;
+                foreach ($rules as $rule) {
+                    $this->renderRuleRow($index++, $rule);
+                }
+                for ($blank = 0; $blank < self::BLANK_RULE_ROWS; $blank++) {
+                    $this->renderRuleRow($index++, null);
+                }
+                ?>
+            </tbody>
+        </table>
+        <datalist id="sentinel_monitor_error_channels">
+            <option value="<?php echo esc_attr(ErrorAlertRule::ANY_CHANNEL); ?>">Any plugin</option>
+            <?php foreach ($this->knownChannels($rules) as $channel) : ?>
+                <option value="<?php echo esc_attr($channel); ?>"></option>
+            <?php endforeach; ?>
+        </datalist>
+        <p class="description">
+            <code>php</code> is PHP warnings and fatals, <code>wp</code> every <code>wp_die()</code>, routine permission
+            refusals included, and <code>monitor</code> this module&rsquo;s own channel: alerting on it means a failed
+            push could page someone about the paging.
+        </p>
+
+        <table class="form-table">
             <tr>
                 <th><label for="sentinel_monitor_error_cap">At most</label></th>
                 <td>
                     <input type="number" min="1" max="500" id="sentinel_monitor_error_cap" class="small-text"
                            name="error_alerts[hourly_cap]"
-                           value="<?php echo esc_attr((string) $settings->hourlyCap()); ?>"> alerts an hour, across all errors
+                           value="<?php echo esc_attr((string) $settings->hourlyCap()); ?>"> alerts an hour, across all rules
                 </td>
             </tr>
         </table>
         <?php
+    }
+
+    /**
+     * One row of the rules table. A null rule is a blank row for adding
+     * one: its level starts unchosen, and a row saved without a level is
+     * skipped.
+     */
+    private function renderRuleRow(int $index, ?ErrorAlertRule $rule): void
+    {
+        $name = static fn(string $field): string => sprintf('error_alerts[rules][%d][%s]', $index, $field);
+        $id = 'sentinel_monitor_error_rule_' . $index;
+        ?>
+        <tr>
+            <td>
+                <label class="screen-reader-text" for="<?php echo esc_attr($id . '_channel'); ?>">Plugin</label>
+                <input type="text" id="<?php echo esc_attr($id . '_channel'); ?>" class="regular-text code"
+                       style="width:12em;" list="sentinel_monitor_error_channels" autocomplete="off"
+                       name="<?php echo esc_attr($name('channel')); ?>"
+                       placeholder="<?php echo esc_attr(ErrorAlertRule::ANY_CHANNEL . ' (any plugin)'); ?>"
+                       value="<?php echo esc_attr($rule->channel ?? ''); ?>">
+            </td>
+            <td>
+                <label class="screen-reader-text" for="<?php echo esc_attr($id . '_level'); ?>">From level</label>
+                <select id="<?php echo esc_attr($id . '_level'); ?>" name="<?php echo esc_attr($name('level')); ?>">
+                    <?php if ($rule === null) : ?>
+                        <option value="" selected>&mdash; Add a rule &mdash;</option>
+                    <?php endif; ?>
+                    <?php foreach (ErrorAlertSettings::LEVELS as $level) : ?>
+                        <option value="<?php echo esc_attr($level); ?>" <?php selected($rule->level ?? '', $level); ?>>
+                            <?php echo esc_html($level === 'debug' ? 'Debug and above (everything)' : ucfirst($level) . ' and above'); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </td>
+            <td>
+                <label class="screen-reader-text" for="<?php echo esc_attr($id . '_alert'); ?>">Alert</label>
+                <select id="<?php echo esc_attr($id . '_alert'); ?>" name="<?php echo esc_attr($name('alert')); ?>">
+                    <?php foreach (self::ALERT_LABELS as $value => $label) : ?>
+                        <option value="<?php echo esc_attr($value); ?>" <?php selected($rule->alert ?? Alert::LEVEL_BLUE, $value); ?>>
+                            <?php echo esc_html($label); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </td>
+            <td>
+                <label class="screen-reader-text" for="<?php echo esc_attr($id . '_timeout'); ?>">Timeout in minutes</label>
+                <input type="number" min="0" max="<?php echo esc_attr((string) ErrorAlertRule::MAX_TIMEOUT_MINUTES); ?>"
+                       id="<?php echo esc_attr($id . '_timeout'); ?>" class="small-text"
+                       name="<?php echo esc_attr($name('timeout_minutes')); ?>"
+                       value="<?php echo esc_attr((string) ($rule->timeoutMinutes ?? ErrorAlertSettings::DEFAULT_TIMEOUT_MINUTES)); ?>"> min
+            </td>
+            <td>
+                <?php if ($rule !== null) : ?>
+                    <label>
+                        <input type="checkbox" name="<?php echo esc_attr($name('remove')); ?>" value="1">
+                        <span class="screen-reader-text">Remove this rule</span>
+                    </label>
+                <?php endif; ?>
+            </td>
+        </tr>
+        <?php
+    }
+
+    /**
+     * The channels to suggest in the plugin field: the ones that have
+     * logged anything on this site, the ones the rules name, and the few
+     * that are always there. A channel that has never logged can still be
+     * typed in.
+     *
+     * @param array<int, ErrorAlertRule> $rules
+     * @return array<int, string>
+     */
+    private function knownChannels(array $rules): array
+    {
+        $channels = ['default', 'monitor', 'php', 'wp'];
+        foreach ($rules as $rule) {
+            if (!$rule->isForAnyChannel()) {
+                $channels[] = $rule->channel;
+            }
+        }
+
+        global $wpdb;
+        if (is_object($wpdb) && method_exists($wpdb, 'get_col') && class_exists('Sentinel_Logger')) {
+            try {
+                $table = '`' . esc_sql(\Sentinel_Logger::tableName()) . '`';
+                $quiet = method_exists($wpdb, 'suppress_errors') ? $wpdb->suppress_errors(true) : null;
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+                $logged = $wpdb->get_col("SELECT DISTINCT channel FROM {$table} LIMIT 200");
+                if ($quiet !== null) {
+                    $wpdb->suppress_errors($quiet);
+                }
+                foreach (is_array($logged) ? $logged : [] as $channel) {
+                    if (is_string($channel)) {
+                        $channels[] = $channel;
+                    }
+                }
+            } catch (\Throwable) {
+                // Suggestions only; the field takes any channel without them.
+            }
+        }
+
+        $channels = array_values(array_unique(array_filter(array_map('sanitize_key', $channels))));
+        sort($channels);
+
+        return $channels;
     }
 
     /**

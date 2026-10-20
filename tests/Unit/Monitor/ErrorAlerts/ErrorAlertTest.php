@@ -9,6 +9,7 @@ use Sentinel\Monitor\Alerts\Alert;
 use Sentinel\Monitor\Core\Schema;
 use Sentinel\Monitor\Devices\Device;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertListener;
+use Sentinel\Monitor\ErrorAlerts\ErrorAlertRule;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSender;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertSettings;
 use Sentinel\Monitor\ErrorAlerts\ErrorAlertThrottle;
@@ -56,7 +57,7 @@ beforeEach(function () {
     $this->alerts = new InMemoryAlertRepository();
     $this->transport = new RecordingTransport();
     $this->settings = new ErrorAlertSettings();
-    $this->sender = new ErrorAlertSender($this->devices, $this->alerts, $this->transport, $this->settings);
+    $this->sender = new ErrorAlertSender($this->devices, $this->alerts, $this->transport);
 
     ErrorAlertListener::reset();
     ErrorAlertListener::useFactories(fn () => $this->settings, fn () => $this->sender);
@@ -89,8 +90,10 @@ test('below the threshold nothing is queued', function () {
     $this->assertSame([], ErrorAlertListener::queued());
 });
 
-test('a raised threshold leaves plain errors alone', function () {
-    $this->settings->save(['enabled' => '1', 'threshold' => 'critical']);
+test('a rule from critical leaves plain errors alone', function () {
+    $this->settings->save(['enabled' => '1', 'rules' => [
+        ['channel' => '*', 'level' => 'critical', 'alert' => 'yellow', 'timeout_minutes' => '15'],
+    ]]);
 
     ($this->log)('error', 'Sync failed');
     ($this->log)('critical', 'Database gone');
@@ -107,7 +110,7 @@ test('wp_die and the module\'s own channel never raise an alert', function () {
 });
 
 test('switched off, nothing is queued', function () {
-    $this->settings->save(['threshold' => 'error']);
+    $this->settings->save([]);
 
     ($this->log)('emergency', 'Everything is on fire');
 
@@ -229,7 +232,7 @@ test('anything logged while delivering is ignored', function () {
     // A refused push logs an error. Delivering must not queue it, or a
     // broken FCM key would page about itself for ever.
     $this->transport->accept = false;
-    $inner = new ErrorAlertSender($this->devices, $this->alerts, $this->transport, $this->settings);
+    $inner = new ErrorAlertSender($this->devices, $this->alerts, $this->transport);
     ErrorAlertListener::useFactories(fn () => $this->settings, function () use ($inner) {
         ErrorAlertListener::onLog('error', 'FCM refused the push', ['_channel' => 'php']);
         return $inner;
@@ -298,20 +301,20 @@ test('a long message is cut to fit and keeps its location', function () {
 // --- the throttle -----------------------------------------------------
 test('the throttle admits, holds back, then reports what it held', function () {
     $throttle = new ErrorAlertThrottle($this->settings);
+    $timeout = 15 * 60;
 
-    $this->assertSame(0, $throttle->admit('fp', 1000));
-    $this->assertNull($throttle->admit('fp', 1001));
-    $this->assertNull($throttle->admit('fp', 1002, repeats: 3));
-    $this->assertSame(5, $throttle->admit('fp', 1000 + 15 * 60));
-    $this->assertSame(0, $throttle->admit('other', 1000 + 15 * 60));
+    $this->assertSame(0, $throttle->admit('fp', 1000, $timeout));
+    $this->assertNull($throttle->admit('fp', 1001, $timeout));
+    $this->assertNull($throttle->admit('fp', 1002, $timeout, repeats: 3));
+    $this->assertSame(5, $throttle->admit('fp', 1000 + $timeout, $timeout));
+    $this->assertSame(0, $throttle->admit('other', 1000 + $timeout, $timeout));
 });
 
-test('a zero cooldown sends every occurrence', function () {
-    $this->settings->save(['enabled' => '1', 'cooldown_minutes' => '0']);
+test('a zero timeout sends every occurrence', function () {
     $throttle = new ErrorAlertThrottle($this->settings);
 
-    $this->assertSame(0, $throttle->admit('fp', 1000));
-    $this->assertSame(0, $throttle->admit('fp', 1000));
+    $this->assertSame(0, $throttle->admit('fp', 1000, 0));
+    $this->assertSame(0, $throttle->admit('fp', 1000, 0));
 });
 
 test('the hourly cap holds errors back until the next hour', function () {
@@ -319,12 +322,12 @@ test('the hourly cap holds errors back until the next hour', function () {
     $throttle = new ErrorAlertThrottle($this->settings);
     $hour = 3600 * 100;
 
-    $this->assertSame(0, $throttle->admit('a', $hour));
-    $this->assertSame(0, $throttle->admit('b', $hour + 1));
-    $this->assertNull($throttle->admit('c', $hour + 2));
+    $this->assertSame(0, $throttle->admit('a', $hour, 900));
+    $this->assertSame(0, $throttle->admit('b', $hour + 1, 900));
+    $this->assertNull($throttle->admit('c', $hour + 2, 900));
 
     // The transient store keeps no clock, so the next hour is a new key.
-    $this->assertSame(1, $throttle->admit('c', $hour + 3600));
+    $this->assertSame(1, $throttle->admit('c', $hour + 3600, 900));
 });
 
 // --- the logged error -------------------------------------------------
@@ -352,30 +355,42 @@ test('a log entry without a channel is the default channel', function () {
 });
 
 // --- settings ---------------------------------------------------------
-test('the defaults are on, from error, with wp and monitor excluded', function () {
+test('the defaults are on, alert from error, with wp and monitor off', function () {
     $this->assertTrue($this->settings->isEnabled());
-    $this->assertSame('error', $this->settings->threshold());
-    $this->assertSame(['wp', 'monitor'], $this->settings->excludedChannels());
-    $this->assertSame(15 * 60, $this->settings->cooldownSeconds());
     $this->assertSame(20, $this->settings->hourlyCap());
-    $this->assertSame(ErrorAlertSettings::DEFAULT_LEVEL_MAP, $this->settings->levelMap());
+    $this->assertSame([
+        ['channel' => '*', 'level' => 'emergency', 'alert' => 'red', 'timeout_minutes' => 15],
+        ['channel' => '*', 'level' => 'alert', 'alert' => 'red', 'timeout_minutes' => 15],
+        ['channel' => '*', 'level' => 'critical', 'alert' => 'yellow', 'timeout_minutes' => 15],
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => 15],
+        ['channel' => 'wp', 'level' => 'debug', 'alert' => 'off', 'timeout_minutes' => 0],
+        ['channel' => 'monitor', 'level' => 'debug', 'alert' => 'off', 'timeout_minutes' => 0],
+    ], array_map(fn (ErrorAlertRule $r): array => $r->toArray(), $this->settings->rules()));
+    $this->assertSame('error', $this->settings->lowestAlertingLevel());
 });
 
 test('saving cleans what the form sent', function () {
     $this->settings->save([
-        'enabled'           => '1',
-        'threshold'         => 'warning',
-        'level_map'         => ['error' => 'red', 'critical' => 'purple'],
-        'excluded_channels' => 'wp, Monitor ,  tsml-for-unity,,',
-        'cooldown_minutes'  => '99999',
-        'hourly_cap'        => '0',
+        'enabled'    => '1',
+        'hourly_cap' => '0',
+        'rules'      => [
+            ['channel' => ' Unity ', 'level' => 'WARNING', 'alert' => 'Red', 'timeout_minutes' => '99999'],
+            ['channel' => '', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => 'soon'],
+            ['channel' => 'unity', 'level' => 'warning', 'alert' => 'yellow', 'timeout_minutes' => '5'],
+            ['channel' => 'reach', 'level' => 'error', 'alert' => 'purple', 'timeout_minutes' => '5'],
+            ['channel' => 'reach', 'level' => 'loud', 'alert' => 'red', 'timeout_minutes' => '5'],
+            ['channel' => 'amber', 'level' => '', 'alert' => 'blue', 'timeout_minutes' => '15'],
+            ['channel' => 'php', 'level' => 'error', 'alert' => 'red', 'timeout_minutes' => '1', 'remove' => '1'],
+            'not a row',
+        ],
     ]);
 
-    $this->assertSame('error', $this->settings->threshold());
-    $this->assertSame('red', $this->settings->handsetLevelFor('error'));
-    $this->assertSame('yellow', $this->settings->handsetLevelFor('critical'));
-    $this->assertSame(['wp', 'monitor', 'tsml-for-unity'], $this->settings->excludedChannels());
-    $this->assertSame(1440, $this->settings->cooldownMinutes());
+    // Cleaned and clamped; the duplicate, the unknown alert and level, the
+    // blank row and the removed one are gone.
+    $this->assertSame([
+        ['channel' => 'unity', 'level' => 'warning', 'alert' => 'red', 'timeout_minutes' => 1440],
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => 15],
+    ], array_map(fn (ErrorAlertRule $r): array => $r->toArray(), $this->settings->rules()));
     $this->assertSame(1, $this->settings->hourlyCap());
 });
 
@@ -383,8 +398,12 @@ test('a malformed stored row falls back to the defaults', function () {
     update_option(ErrorAlertSettings::OPTION, 'not an array');
 
     $this->assertTrue($this->settings->isEnabled());
-    $this->assertSame('error', $this->settings->threshold());
+    $this->assertSame('error', $this->settings->lowestAlertingLevel());
     $this->assertSame(20, $this->settings->hourlyCap());
+
+    update_option(ErrorAlertSettings::OPTION, ['enabled' => true, 'rules' => 'nonsense']);
+
+    $this->assertCount(6, $this->settings->rules());
 });
 
 test('a logger set above the threshold is reported', function () {
@@ -406,15 +425,22 @@ test('a fatal is sent at once, without waiting for a shutdown that will not come
     $this->assertSame(Alert::LEVEL_RED, $this->alerts->alerts[1]->level);
 });
 
-test('shortening the cooldown takes effect for an error already cooling', function () {
-    $throttle = new ErrorAlertThrottle($this->settings);
+test('shortening a timeout takes effect for an error already held back', function () {
+    ($this->log)('error', 'Sync failed');
+    ErrorAlertListener::deliver(1000);
+    ($this->log)('error', 'Sync failed');
+    ErrorAlertListener::deliver(1060);
 
-    $this->assertSame(0, $throttle->admit('fp', 1000));
-    $this->assertNull($throttle->admit('fp', 1060));
+    $this->assertCount(1, $this->alerts->alerts);
 
-    $this->settings->save(['enabled' => '1', 'cooldown_minutes' => '1']);
+    $this->settings->save(['enabled' => '1', 'rules' => [
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '1'],
+    ]]);
+    ($this->log)('error', 'Sync failed');
+    ErrorAlertListener::deliver(1061);
 
-    $this->assertSame(1, $throttle->admit('fp', 1061));
+    $this->assertCount(2, $this->alerts->alerts);
+    $this->assertStringContainsString('+1 similar since the last alert', $this->alerts->alerts[1]->body);
 });
 
 test('delivery hangs on the shutdown action, late, and runs from it', function () {
@@ -430,4 +456,184 @@ test('delivery hangs on the shutdown action, late, and runs from it', function (
 
     $this->assertCount(1, $this->alerts->alerts);
     $this->assertSame([], ErrorAlertListener::queued());
+});
+
+// --- rules ------------------------------------------------------------
+function saveRules(ErrorAlertSettings $settings, array $rules): void
+{
+    $settings->save(['enabled' => '1', 'rules' => $rules]);
+}
+
+test('a plugin rule overrides the general rule for the levels it covers, and only those', function () {
+    saveRules($this->settings, [
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '15'],
+        ['channel' => 'unity', 'level' => 'critical', 'alert' => 'red', 'timeout_minutes' => '5'],
+    ]);
+
+    $this->assertSame('red', $this->settings->ruleFor('unity', 'critical')?->alert);
+    $this->assertSame('red', $this->settings->ruleFor('unity', 'emergency')?->alert);
+    $this->assertSame('blue', $this->settings->ruleFor('unity', 'error')?->alert);
+    $this->assertSame('blue', $this->settings->ruleFor('reach', 'critical')?->alert);
+    $this->assertNull($this->settings->ruleFor('unity', 'warning'));
+});
+
+test('of the rules an entry meets, the most severe wins', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'warning', 'alert' => 'blue', 'timeout_minutes' => '60'],
+        ['channel' => 'unity', 'level' => 'error', 'alert' => 'yellow', 'timeout_minutes' => '15'],
+        ['channel' => 'unity', 'level' => 'alert', 'alert' => 'red', 'timeout_minutes' => '1'],
+    ]);
+
+    $this->assertSame(['blue', 60], [$this->settings->ruleFor('unity', 'warning')?->alert, $this->settings->ruleFor('unity', 'warning')?->timeoutMinutes]);
+    $this->assertSame('yellow', $this->settings->ruleFor('unity', 'critical')?->alert);
+    $this->assertSame('red', $this->settings->ruleFor('unity', 'emergency')?->alert);
+    $this->assertNull($this->settings->ruleFor('unity', 'notice'));
+});
+
+test('a rule set to off silences what it covers', function () {
+    saveRules($this->settings, [
+        ['channel' => '*', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '15'],
+        ['channel' => 'concordance', 'level' => 'error', 'alert' => 'off', 'timeout_minutes' => '0'],
+        ['channel' => 'concordance', 'level' => 'emergency', 'alert' => 'red', 'timeout_minutes' => '0'],
+    ]);
+
+    ErrorAlertListener::onLog('error', 'Lookup failed', ['_channel' => 'concordance']);
+    ErrorAlertListener::onLog('critical', 'Index broken', ['_channel' => 'concordance']);
+    ErrorAlertListener::onLog('emergency', 'Gone', ['_channel' => 'concordance']);
+    ErrorAlertListener::deliver(5000);
+
+    $this->assertCount(1, $this->alerts->alerts);
+    $this->assertSame('[concordance] EMERGENCY', $this->alerts->alerts[0]->title);
+    $this->assertSame(Alert::LEVEL_RED, $this->alerts->alerts[0]->level);
+});
+
+test('the alert rings at the level its rule sets', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'error', 'alert' => 'red', 'timeout_minutes' => '15'],
+    ]);
+
+    ($this->log)('error', 'Sync failed');
+    ErrorAlertListener::deliver(5000);
+
+    $this->assertSame(Alert::LEVEL_RED, $this->alerts->alerts[0]->level);
+});
+
+test('a rule may alert below error', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'warning', 'alert' => 'blue', 'timeout_minutes' => '15'],
+    ]);
+
+    ($this->log)('warning', 'Slow sync');
+    ($this->log)('notice', 'Cache miss');
+    ErrorAlertListener::deliver(5000);
+
+    $this->assertCount(1, $this->alerts->alerts);
+    $this->assertSame('[unity] WARNING', $this->alerts->alerts[0]->title);
+});
+
+test('each rule holds repeats back for its own timeout', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '60'],
+        ['channel' => 'reach', 'level' => 'error', 'alert' => 'blue', 'timeout_minutes' => '5'],
+    ]);
+    $logBoth = function (int $at): void {
+        ErrorAlertListener::onLog('error', 'Sync failed', ['_channel' => 'unity']);
+        ErrorAlertListener::onLog('error', 'Send failed', ['_channel' => 'reach']);
+        ErrorAlertListener::deliver($at);
+    };
+
+    $logBoth(5000);
+    $logBoth(5000 + 5 * 60);
+
+    // Reach's five minutes are up; Unity's hour is not.
+    $this->assertSame(
+        ['[unity] ERROR', '[reach] ERROR', '[reach] ERROR'],
+        array_map(fn (Alert $a): string => $a->title, $this->alerts->alerts),
+    );
+
+    $logBoth(5000 + 60 * 60);
+
+    $this->assertCount(5, $this->alerts->alerts);
+    $this->assertStringContainsString('+1 similar since the last alert', $this->alerts->alerts[3]->body);
+});
+
+test('with every rule off or removed nothing is queued', function () {
+    saveRules($this->settings, [
+        ['channel' => '*', 'level' => 'debug', 'alert' => 'off', 'timeout_minutes' => '0'],
+    ]);
+    ErrorAlertListener::reset();
+
+    ($this->log)('emergency', 'Everything is on fire');
+    $this->assertNull($this->settings->lowestAlertingLevel());
+    $this->assertSame([], ErrorAlertListener::queued());
+
+    saveRules($this->settings, [
+        ['channel' => '*', 'level' => 'error', 'alert' => 'red', 'timeout_minutes' => '0', 'remove' => '1'],
+    ]);
+    ErrorAlertListener::reset();
+
+    // Removing the last rule leaves none, not the defaults back.
+    $this->assertSame([], $this->settings->rules());
+    ($this->log)('emergency', 'Everything is on fire');
+    $this->assertSame([], ErrorAlertListener::queued());
+});
+
+test('a save without rules keeps the rules there are', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'error', 'alert' => 'red', 'timeout_minutes' => '5'],
+    ]);
+
+    $this->settings->save(['enabled' => '1', 'hourly_cap' => '7']);
+
+    $this->assertCount(1, $this->settings->rules());
+    $this->assertSame(7, $this->settings->hourlyCap());
+});
+
+test('a row saved before the rules reads as the rules that behave the same', function () {
+    update_option(ErrorAlertSettings::OPTION, [
+        'enabled'           => true,
+        'threshold'         => 'critical',
+        'level_map'         => ['emergency' => 'red', 'alert' => 'yellow', 'critical' => 'blue', 'error' => 'red'],
+        'excluded_channels' => ['tsml-for-unity'],
+        'cooldown_minutes'  => 30,
+        'hourly_cap'        => 9,
+    ]);
+
+    $this->assertSame([
+        ['channel' => '*', 'level' => 'emergency', 'alert' => 'red', 'timeout_minutes' => 30],
+        ['channel' => '*', 'level' => 'alert', 'alert' => 'yellow', 'timeout_minutes' => 30],
+        ['channel' => '*', 'level' => 'critical', 'alert' => 'blue', 'timeout_minutes' => 30],
+        ['channel' => 'tsml-for-unity', 'level' => 'debug', 'alert' => 'off', 'timeout_minutes' => 0],
+    ], array_map(fn (ErrorAlertRule $r): array => $r->toArray(), $this->settings->rules()));
+    $this->assertSame(9, $this->settings->hourlyCap());
+
+    // And they behave as the old settings did.
+    $this->assertNull($this->settings->ruleFor('unity', 'error'));
+    $this->assertSame('yellow', $this->settings->ruleFor('unity', 'alert')?->alert);
+    $this->assertNull($this->settings->ruleFor('tsml-for-unity', 'emergency'));
+});
+
+test('a channel is matched however the logger spelled it', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'error', 'alert' => 'red', 'timeout_minutes' => '5'],
+    ]);
+
+    $this->assertSame('red', $this->settings->ruleFor('Unity', 'ERROR')?->alert);
+    $this->assertNull($this->settings->ruleFor('unity', 'shouting'));
+});
+
+test('a logger set above the lowest alerting rule is reported', function () {
+    saveRules($this->settings, [
+        ['channel' => 'unity', 'level' => 'warning', 'alert' => 'blue', 'timeout_minutes' => '5'],
+    ]);
+
+    \Brain\Monkey\Filters\expectApplied('sentinel_logger_level')->andReturn('error');
+
+    $this->assertTrue($this->settings->loggerDropsThreshold());
+});
+
+test('the sender rings an unknown level blue rather than not at all', function () {
+    $this->sender->send(new LoggedError('error', 'unity', 'Sync failed'), 0, 5000, 'purple');
+
+    $this->assertSame(Alert::LEVEL_BLUE, $this->alerts->alerts[0]->level);
 });

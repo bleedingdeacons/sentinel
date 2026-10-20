@@ -97,8 +97,9 @@ final class ErrorAlertListener
     }
 
     /**
-     * Hear one log entry. Cheap on purpose: it runs for every entry at or
-     * above the logger's own level, on every request.
+     * Hear one log entry, and queue it when a rule alerts on it. Cheap on
+     * purpose: it runs for every entry at or above the logger's own level,
+     * on every request.
      *
      * @param mixed $level
      * @param mixed $message
@@ -114,13 +115,16 @@ final class ErrorAlertListener
             return;
         }
 
+        // Below every rule's level nothing can match, so stop before
+        // building anything.
         $settings = self::settings();
-        if (!$settings->isEnabled() || !\Sentinel_Log_Level::meetsThreshold(strtolower($level), $settings->threshold())) {
+        $lowest = $settings->isEnabled() ? $settings->lowestAlertingLevel() : null;
+        if ($lowest === null || !\Sentinel_Log_Level::meetsThreshold(strtolower($level), $lowest)) {
             return;
         }
 
         $error = LoggedError::fromLog($level, $message, is_array($context) ? $context : []);
-        if (in_array($error->channel, $settings->excludedChannels(), true)) {
+        if ($settings->ruleFor($error->channel, $error->level) === null) {
             return;
         }
 
@@ -183,16 +187,24 @@ final class ErrorAlertListener
                 fastcgi_finish_request();
             }
 
+            $settings = self::settings();
             $sender = self::sender();
-            $throttle = new ErrorAlertThrottle(self::settings());
+            $throttle = new ErrorAlertThrottle($settings);
 
+            // A fingerprint covers one channel and level, so every error in
+            // a group matches the same rule.
             foreach (self::grouped($queue, $overflow) as [$error, $repeats]) {
-                $suppressed = $throttle->admit($error->fingerprint(), $now, $repeats);
+                $rule = $settings->ruleFor($error->channel, $error->level);
+                if ($rule === null) {
+                    continue;
+                }
+
+                $suppressed = $throttle->admit($error->fingerprint(), $now, $rule->timeoutSeconds(), $repeats);
                 if ($suppressed === null) {
                     continue;
                 }
 
-                $sender->send($error, $suppressed, $now);
+                $sender->send($error, $suppressed, $now, $rule->alert);
             }
         } catch (Throwable $e) {
             self::logError('Error alerts could not be delivered: ' . $e->getMessage());
