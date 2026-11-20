@@ -732,12 +732,15 @@ final class Sentinel_Journal
             return json_validate($entry) ? $entry : null;
         }
 
+        // Throwable, not just JsonException: a JsonSerializable's own
+        // jsonSerialize() can throw anything, and the journal promises its
+        // caller that it never throws.
         try {
             return json_encode(
                 $entry,
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION
             );
-        } catch (\JsonException) {
+        } catch (\Throwable) {
             return null;
         }
     }
@@ -782,7 +785,20 @@ final class Sentinel_Journal
         }
 
         self::createTable();
-        update_option(self::DB_VERSION_OPTION, self::DB_VERSION);
+
+        // Only remember the version once the table is really there. dbDelta()
+        // reports nothing useful on failure (no CREATE privilege, say), and a
+        // version saved over a missing table would stop every later attempt.
+        if (self::tableExists()) {
+            update_option(self::DB_VERSION_OPTION, self::DB_VERSION);
+        }
+    }
+
+    public static function tableExists(): bool
+    {
+        global $wpdb;
+        $table = self::tableName();
+        return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
     }
 
     public static function createTable(): void

@@ -210,23 +210,95 @@ class JournalPage
 
     /**
      * Pretty-print stored JSON for display, falling back to the raw value
-     * when it does not decode or re-encode.
+     * when it is not valid JSON.
+     *
+     * Reformats the text itself — whitespace in, whitespace out — rather
+     * than decoding and re-encoding it. A round trip through PHP values
+     * rewrites what it touches: an integer past PHP_INT_MAX comes back a
+     * rounded float, 1.10 comes back 1.1, "é" comes back "é". An
+     * administrator copying an id or an amount out of this view must get
+     * exactly what was stored.
      */
     public static function prettyJson(string $json): string
     {
-        if ($json === '') {
-            return '';
-        }
-
-        try {
-            $decoded = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
-            return json_encode(
-                $decoded,
-                JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION
-            );
-        } catch (\JsonException) {
+        if ($json === '' || !json_validate($json)) {
             return $json;
         }
+
+        $out      = '';
+        $depth    = 0;
+        $inString = false;
+        $escaped  = false;
+        $length   = strlen($json);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $json[$i];
+
+            if ($inString) {
+                $out .= $char;
+                if ($escaped) {
+                    $escaped = false;
+                } elseif ($char === '\\') {
+                    $escaped = true;
+                } elseif ($char === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+
+            switch ($char) {
+                case '"':
+                    $inString = true;
+                    $out .= $char;
+                    break;
+                case '{':
+                case '[':
+                    // An empty container stays on one line: {} and [].
+                    $next = self::nextSignificant($json, $i + 1);
+                    if ($next !== null && ($json[$next] === '}' || $json[$next] === ']')) {
+                        $out .= $char . $json[$next];
+                        $i = $next;
+                        break;
+                    }
+                    $depth++;
+                    $out .= $char . "\n" . str_repeat('    ', $depth);
+                    break;
+                case '}':
+                case ']':
+                    $depth--;
+                    $out .= "\n" . str_repeat('    ', $depth) . $char;
+                    break;
+                case ',':
+                    $out .= ",\n" . str_repeat('    ', $depth);
+                    break;
+                case ':':
+                    $out .= ': ';
+                    break;
+                case ' ':
+                case "\t":
+                case "\n":
+                case "\r":
+                    break;
+                default:
+                    $out .= $char;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Index of the next non-whitespace byte at or after $from, or null.
+     */
+    private static function nextSignificant(string $json, int $from): ?int
+    {
+        $length = strlen($json);
+        for ($i = $from; $i < $length; $i++) {
+            if (!in_array($json[$i], [' ', "\t", "\n", "\r"], true)) {
+                return $i;
+            }
+        }
+        return null;
     }
 
     /**

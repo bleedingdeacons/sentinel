@@ -136,6 +136,19 @@ describe('refusals', function () {
             ->and($wpdb->inserts)->toBe([]);
     });
 
+    it('swallows whatever a JsonSerializable throws', function () {
+        global $wpdb;
+        $entry = new class implements \JsonSerializable {
+            public function jsonSerialize(): mixed
+            {
+                throw new \RuntimeException('not today');
+            }
+        };
+
+        expect(\Sentinel_Journal::record('unity', $entry))->toBeNull()
+            ->and($wpdb->inserts)->toBe([]);
+    });
+
     it('logs the refusal on the caller\'s channel', function () {
         $before = \Sentinel_Logger::instance()->bufferCount();
 
@@ -154,14 +167,33 @@ describe('refusals', function () {
 
 describe('table', function () {
     it('creates the table once per schema version', function () {
+        global $wpdb;
+        unset(WpState::$options[\Sentinel_Journal::DB_VERSION_OPTION]);
+        $GLOBALS['sentinel_test_dbdelta'] = [];
+        $wpdb->existingTable = 'wp_sentinel_journal';
+
+        try {
+            \Sentinel_Journal::record('unity', '{}');
+            \Sentinel_Journal::record('unity', '{}');
+        } finally {
+            $wpdb->existingTable = '';
+        }
+
+        expect($GLOBALS['sentinel_test_dbdelta'])->toHaveCount(1)
+            ->and(WpState::$options[\Sentinel_Journal::DB_VERSION_OPTION])->toBe(\Sentinel_Journal::DB_VERSION);
+    });
+
+    it('keeps trying when the table could not be created', function () {
+        // existingTable stays '', so the post-create check finds nothing:
+        // dbDelta "ran" but the table is not there (no CREATE privilege, say).
         unset(WpState::$options[\Sentinel_Journal::DB_VERSION_OPTION]);
         $GLOBALS['sentinel_test_dbdelta'] = [];
 
         \Sentinel_Journal::record('unity', '{}');
         \Sentinel_Journal::record('unity', '{}');
 
-        expect($GLOBALS['sentinel_test_dbdelta'])->toHaveCount(1)
-            ->and(WpState::$options[\Sentinel_Journal::DB_VERSION_OPTION])->toBe(\Sentinel_Journal::DB_VERSION);
+        expect($GLOBALS['sentinel_test_dbdelta'])->toHaveCount(2, 'Each write retries the create.')
+            ->and(WpState::$options)->not->toHaveKey(\Sentinel_Journal::DB_VERSION_OPTION);
     });
 
     it('keys on a uuid, with a site-time datetime and a JSON column', function () {

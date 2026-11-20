@@ -112,4 +112,28 @@ describe('prettyJson', function () {
     it('keeps an empty value empty', function () {
         expect(JournalPage::prettyJson(''))->toBe('');
     });
+
+    it('indents objects and arrays', function () {
+        expect(JournalPage::prettyJson('{"a":1,"b":[true,null]}'))
+            ->toBe("{\n    \"a\": 1,\n    \"b\": [\n        true,\n        null\n    ]\n}");
+    });
+
+    it('keeps empty containers on one line', function () {
+        expect(JournalPage::prettyJson('{"a":{},"b":[ ]}'))->toBe("{\n    \"a\": {},\n    \"b\": []\n}");
+    });
+
+    it('leaves numbers exactly as stored', function () {
+        // Past PHP_INT_MAX, and a float a decode would shorten.
+        expect(JournalPage::prettyJson('{"id":18446744073709551615,"amount":1.10}'))
+            ->toBe("{\n    \"id\": 18446744073709551615,\n    \"amount\": 1.10\n}");
+    });
+
+    it('leaves strings exactly as stored, punctuation and escapes included', function () {
+        expect(JournalPage::prettyJson('["a, b: {c}","q\\"uote","\\u00e9 é"]'))
+            ->toBe("[\n    \"a, b: {c}\",\n    \"q\\\"uote\",\n    \"\\u00e9 é\"\n]");
+    });
+
+    it('drops whitespace already in the stored text', function () {
+        expect(JournalPage::prettyJson("{ \"a\" :\n 1 }"))->toBe("{\n    \"a\": 1\n}");
+    });
 });
