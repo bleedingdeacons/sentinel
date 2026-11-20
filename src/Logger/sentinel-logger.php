@@ -608,6 +608,213 @@ final class Sentinel_Logger
     }
 }
 
+// ─── Journal: durable JSON records, kept apart from the log ─────────────────
+
+/**
+ * The journal: one row per entry, each a JSON document a plugin chose to keep.
+ *
+ * Where the log is diagnostic — buffered, levelled, pruned to a row limit —
+ * the journal is a record. Every entry is written immediately (so the caller
+ * gets its id back), is never pruned, and holds whatever JSON the caller
+ * handed over rather than a message and a context.
+ *
+ * Its own table, {prefix}sentinel_journal:
+ *
+ *   id          char(36)     RFC 4122 v4 uuid, the primary key
+ *   recorded_at datetime(6)  site time (wp_timezone()), to the microsecond
+ *   channel     varchar(100) who wrote it, sanitize_key()'d like a log channel
+ *   data        json         the entry
+ *
+ * Use it through wp_journal() or the \Sentinel\Journal\HasJournal trait.
+ */
+final class Sentinel_Journal
+{
+    /**
+     * Database table name (without prefix).
+     */
+    public const TABLE_NAME = 'sentinel_journal';
+
+    /**
+     * DB schema version — bump this when the table structure changes.
+     */
+    public const DB_VERSION = '1.0.0';
+
+    /**
+     * Option key that stores the installed schema version.
+     */
+    public const DB_VERSION_OPTION = 'sentinel_journal_db_version';
+
+    /**
+     * Length of a hyphenated uuid, and so of the id column.
+     */
+    public const ID_LENGTH = 36;
+
+    /**
+     * Get the full table name (with WP prefix).
+     */
+    public static function tableName(): string
+    {
+        global $wpdb;
+        return $wpdb->prefix . self::TABLE_NAME;
+    }
+
+    /**
+     * Record one entry.
+     *
+     * @param string                    $channel Who is writing — a plugin or subsystem name.
+     * @param string|array<mixed>|object $entry  JSON text, or anything json_encode() accepts:
+     *                                           an array, a stdClass, a JsonSerializable, or
+     *                                           any object (its public properties are kept).
+     *
+     * @return string|null The new entry's uuid, or null when nothing was recorded — the
+     *                     entry was not valid JSON, could not be encoded, or the insert
+     *                     failed. Never throws: a journal that cannot write must not take
+     *                     its caller down. Each failure is logged on the caller's channel.
+     */
+    public static function record(string $channel, string|array|object $entry): ?string
+    {
+        $channel = sanitize_key($channel);
+        $json    = self::encode($entry);
+
+        if ($json === null) {
+            wp_log($channel)->warning('Journal entry not recorded: it is not valid JSON or cannot be encoded as JSON.', [
+                'type' => get_debug_type($entry),
+            ]);
+            return null;
+        }
+
+        self::maybeCreateTable();
+
+        global $wpdb;
+        $id = self::uuid();
+
+        $result = $wpdb->insert(
+            self::tableName(),
+            [
+                'id'          => $id,
+                'recorded_at' => self::now(),
+                'channel'     => $channel,
+                'data'        => $json,
+            ],
+            ['%s', '%s', '%s', '%s']
+        );
+
+        if ($result === false) {
+            wp_log($channel)->error('Journal entry not recorded: the insert failed.', [
+                'db_error' => $wpdb->last_error,
+            ]);
+            return null;
+        }
+
+        /**
+         * Action: a journal entry was recorded.
+         *
+         * @param string $id      The entry's uuid.
+         * @param string $channel The channel it was recorded on.
+         * @param string $json    The entry, as stored.
+         */
+        do_action('sentinel_journal_recorded', $id, $channel, $json);
+
+        return $id;
+    }
+
+    /**
+     * Turn an entry into the JSON text that is stored.
+     *
+     * A string must already be JSON and is stored as given. Anything else is
+     * encoded. Null means it could not be done.
+     *
+     * @param string|array<mixed>|object $entry
+     */
+    public static function encode(string|array|object $entry): ?string
+    {
+        if (is_string($entry)) {
+            return json_validate($entry) ? $entry : null;
+        }
+
+        try {
+            return json_encode(
+                $entry,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION
+            );
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    /**
+     * A fresh RFC 4122 version 4 uuid, lower case and hyphenated.
+     *
+     * Not wp_generate_uuid4(): this file must not depend on more of
+     * WordPress than it has to, and random_bytes() is a better source.
+     */
+    public static function uuid(): string
+    {
+        $bytes = random_bytes(16);
+
+        // Version 4 in the high nibble of byte 6, variant 10xx in byte 8.
+        $bytes[6] = chr((ord($bytes[6]) & 0x0F) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3F) | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    }
+
+    /**
+     * The current time in the site's timezone (Settings → General, via
+     * wp_timezone()), to the microsecond, as MySQL's datetime(6) takes it.
+     *
+     * Site time rather than UTC, so the journal reads in the same clock as
+     * the rest of the admin. The trade is the usual one for local time: an
+     * hour repeats when the clocks go back, and the stored value says
+     * nothing about which zone it was in. The timezone is not recorded.
+     */
+    public static function now(): string
+    {
+        return (new DateTimeImmutable('now', wp_timezone()))->format('Y-m-d H:i:s.u');
+    }
+
+    // ── Table Management ──
+
+    public static function maybeCreateTable(): void
+    {
+        if (get_option(self::DB_VERSION_OPTION, '') === self::DB_VERSION) {
+            return;
+        }
+
+        self::createTable();
+        update_option(self::DB_VERSION_OPTION, self::DB_VERSION);
+    }
+
+    public static function createTable(): void
+    {
+        global $wpdb;
+        $table   = self::tableName();
+        $charset = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE {$table} (
+            id char(36) NOT NULL,
+            recorded_at datetime(6) NOT NULL,
+            channel varchar(100) NOT NULL DEFAULT '',
+            data json NOT NULL,
+            PRIMARY KEY  (id),
+            KEY idx_recorded_at (recorded_at),
+            KEY idx_channel_recorded_at (channel, recorded_at)
+        ) $charset;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    public static function dropTable(): void
+    {
+        global $wpdb;
+        $table = self::tableName();
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
+        $wpdb->query("DROP TABLE IF EXISTS `" . esc_sql($table) . "`");
+        delete_option(self::DB_VERSION_OPTION);
+    }
+}
+
 // ── Global Helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -634,6 +841,23 @@ if ( ! function_exists( 'wp_log_flush' ) ) {
     function wp_log_flush(): int
     {
         return Sentinel_Logger::instance()->flush();
+    }
+}
+
+/**
+ * Record a journal entry: JSON text, or an array or object to encode as JSON.
+ *
+ *   $id = wp_journal('unity', ['event' => 'shift_swapped', 'shift' => 'SHIFT-2026-08-15-N']);
+ *   $id = wp_journal('unity', '{"event":"shift_swapped"}');
+ *   $id = wp_journal('unity', $someObject);
+ *
+ * @param string|array<mixed>|object $entry
+ * @return string|null The entry's uuid, or null when it was not recorded.
+ */
+if ( ! function_exists( 'wp_journal' ) ) {
+    function wp_journal(string $channel, string|array|object $entry): ?string
+    {
+        return Sentinel_Journal::record($channel, $entry);
     }
 }
 

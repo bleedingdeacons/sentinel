@@ -240,7 +240,7 @@ TXT;
 
         add_settings_field(
             self::OPTION_DROP_TABLE,
-            __('Drop log table on uninstall', 'sentinel'),
+            __('Drop log and journal tables on uninstall', 'sentinel'),
             [self::class, 'renderDropTableField'],
             self::PAGE_SLUG,
             'sentinel_uninstall_section'
@@ -445,13 +445,13 @@ TXT;
                     <?php checked($value, '1'); ?>
             />
             <?php esc_html_e(
-                'Remove the log database table and all stored entries when Sentinel is uninstalled.',
+                'Remove the log and journal database tables, and every entry in them, when Sentinel is uninstalled.',
                 'sentinel'
             ); ?>
         </label>
         <p class="description">
             <?php esc_html_e(
-                'When unchecked (the default), the log table is preserved.',
+                'When unchecked (the default), both tables are preserved.',
                 'sentinel'
             ); ?>
         </p>

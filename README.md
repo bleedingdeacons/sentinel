@@ -37,6 +37,7 @@ Sentinel adds a WordPress admin dashboard widget that monitors the health of the
 - **No dependencies** — the dashboard and logger need no other plugin; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
 - **Monitor** — the server side of the Monitor app, moved from Reach: handset sign-in (Google, Microsoft, Facebook or password), sealed push alerts over Firebase, acknowledgement, replies and the member directory, all under `sentinel/v1`. Optional: it boots only when Unity is active, needs Scrutiny for audit logging, and stands down with `SENTINEL_MONITOR_KILL`. Configured under **Sentinel → Monitor Settings**.
 - **Error alerts** — when a log entry (or a PHP fatal) matches a rule, the Monitor handsets an admin has opted in on **Sentinel → Monitor Devices** are paged. Rules on **Sentinel → Monitor Settings** pick the plugin (log channel, or `*` for any) and the level an alert starts from, ring it red, yellow or blue (or not at all), and set a timeout that holds repeats of the same error back; a plugin's own rule overrides the `*` rules for the levels it covers. Repeats are counted and reported, and an hourly cap covers all rules. Only the channel, level, message and file are sent, never the log context. Works when Unity is down.
+- **Journal** — durable JSON records, kept apart from the log. Any plugin can call `wp_journal()` or use the `HasJournal` trait with JSON text or a PHP object; each entry gets a uuid and a site-time timestamp, and **Sentinel → Journal** lists them by channel.
 - **Lightweight** — minimal footprint; a single dashboard widget class with bundled CSS and JS.
 
 ---
@@ -95,16 +96,20 @@ sentinel/
 ├── assets/
 │   ├── dashboard.css                # Widget styles
 │   ├── dashboard.js                 # AJAX refresh logic
+│   ├── journal.css                  # Journal page styles
 │   ├── log-viewer.css               # Log viewer page styles
 │   └── log-viewer.js                # Log viewer AJAX refresh
 └── src/
     ├── Plugin.php                   # Initialisation (admin-only)
     ├── Admin/
     │   ├── DashboardWidget.php      # Widget registration, rendering & AJAX endpoint
+    │   ├── JournalPage.php          # Sentinel → Journal admin page
     │   ├── LogViewerPage.php        # Tools → Sentinel Logs admin page
     │   └── SettingsPage.php         # Settings → Sentinel options page
+    ├── Journal/
+    │   └── HasJournal.php           # Convenience trait for other plugins
     ├── Logger/
-    │   ├── sentinel-logger.php     # Shared mu-plugin (deployed to mu-plugins/)
+    │   ├── sentinel-logger.php     # Shared mu-plugin (deployed to mu-plugins/): logger and journal
     │   ├── HasLogger.php            # Convenience trait for other plugins
     │   └── LoggerManager.php        # Deploy/remove lifecycle for the mu-plugin
     └── Monitor/                     # Server side of the Monitor app (optional; boots on unity/loaded)
@@ -138,13 +143,45 @@ wp log table                # Print the full table name
 wp log flush                # Flush the in-memory buffer to the database immediately
 ```
 
+### Journal
+
+The journal shares the mu-plugin with the logger but not its table: entries go to `{prefix}sentinel_journal`, one row each, written immediately and never pruned.
+
+| Column | Type | |
+|---|---|---|
+| `id` | `char(36)` | RFC 4122 v4 uuid, the primary key |
+| `recorded_at` | `datetime(6)` | Site time (`wp_timezone()`, Settings → General), to the microsecond |
+| `channel` | `varchar(100)` | Who wrote it, sanitised like a log channel |
+| `data` | `json` | The entry |
+
+```php
+// Anywhere, once the mu-plugin is deployed:
+$id = wp_journal('unity', ['event' => 'shift_swapped']);
+
+// Or through the trait, which no-ops (returns null) without the mu-plugin:
+class MyPlugin {
+    use \Sentinel\Journal\HasJournal;
+
+    protected static function journalChannel(): string {
+        return 'my-plugin';
+    }
+}
+
+MyPlugin::journal('{"event":"shift_swapped"}');           // JSON text, stored as given
+MyPlugin::journal((object) ['event' => 'shift_swapped']); // or a PHP object (or array), json_encode()d
+```
+
+Both return the new entry's uuid, or `null` when nothing was recorded — a string that is not valid JSON, a value `json_encode()` refuses, or a failed insert. Neither throws; the reason is logged on the same channel. The `sentinel_journal_recorded` action fires with the id, channel and stored JSON after each write. Like `HasLogger`, a sibling plugin keeps its own copy of the trait in its own namespace.
+
+**Sentinel → Journal** lists entries newest first, 50 to a page, filterable by channel, with each entry's JSON pretty-printed under a disclosure. It is read-only: there is no clear button.
+
 ### Settings
 
 Navigate to **Settings → Sentinel** to configure uninstall behaviour:
 
 | Option | Default | Description |
 |---|---|---|
-| Drop log table on uninstall | **Off** | When checked, deleting Sentinel from the Plugins page will also drop the `sentinel_log_entries` table and all stored entries. When unchecked (the default), the table is preserved so other Bleeding Deacons plugins can continue to use it. |
+| Drop log and journal tables on uninstall | **Off** | When checked, deleting Sentinel from the Plugins page will also drop the `sentinel_log_entries` and `sentinel_journal` tables and all stored entries. When unchecked (the default), both are preserved so other Bleeding Deacons plugins can continue to use them. |
 
 ---
 

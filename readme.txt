@@ -24,6 +24,7 @@ Sentinel adds a WordPress admin dashboard widget that monitors the health of the
 * **No dependencies** — the dashboard and logger need no other plugin; it initialises on `plugins_loaded` at priority 5 and monitors whatever Intergroup plugins happen to be installed.
 * **Monitor** — the server side of the Monitor app: handset sign-in, sealed push alerts, acknowledgement and messaging under `sentinel/v1`. Optional; needs Unity and Scrutiny.
 * **Error alerts** — log entries and PHP fatals page the Monitor handsets an admin has opted in, by rules that pick the plugin and level, the alert level (red, yellow, blue or off) and a timeout per error, under an hourly cap.
+* **Journal** — durable JSON records in their own table, written with `wp_journal()` or the `HasJournal` trait (JSON text or a PHP object), each with a uuid and a site-time timestamp, listed under Sentinel → Journal.
 * **Lightweight** — minimal footprint; a single dashboard widget class with bundled CSS and JS.
 
 == Installation ==

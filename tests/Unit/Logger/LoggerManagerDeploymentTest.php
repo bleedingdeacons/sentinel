@@ -140,12 +140,18 @@ describe('remove', function () {
 });
 
 // ── log data cleanup ──────────────────────────────────────────────
-it('drops the table through the logger when cleaning logs', function () {
+it('drops the log and journal tables when cleaning logs', function () {
     global $wpdb;
     $before = count($wpdb->queries);
 
     LoggerManager::cleanLogs();
 
-    expect(count($wpdb->queries))->toBeGreaterThan($before, 'A DROP TABLE was issued.')
-        ->and(end($wpdb->queries))->toContain('DROP TABLE');
+    $drops = array_values(array_filter(
+        array_slice($wpdb->queries, $before),
+        fn (string $q): bool => str_contains($q, 'DROP TABLE')
+    ));
+
+    expect($drops)->toHaveCount(2)
+        ->and($drops[0])->toContain('wp_sentinel_log_entries')
+        ->and($drops[1])->toContain('wp_sentinel_journal');
 });

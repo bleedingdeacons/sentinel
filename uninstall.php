@@ -5,8 +5,8 @@
  *
  * Fired when the plugin is deleted via the WordPress admin.
  * Always removes the shared logger mu-plugin.
- * Only drops the log database table if the user opted in via
- * Settings → Sentinel → "Drop log table on uninstall".
+ * Only drops the log and journal tables if the user opted in via
+ * Settings → Sentinel → "Drop log and journal tables on uninstall".
  * Removes Sentinel logger constants from wp-config.php.
  */
 
@@ -29,7 +29,7 @@ if (file_exists($logger_manager)) {
     // Always remove the mu-plugin file
     \Sentinel\Logger\LoggerManager::remove();
 
-    // Only drop the log table if the admin explicitly opted in.
+    // Only drop the log and journal tables if the admin explicitly opted in.
     // The option defaults to '' (false / preserve data).
     $drop = get_option('sentinel_drop_table_on_uninstall', '');
 
