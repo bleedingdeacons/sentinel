@@ -1,0 +1,108 @@
+/* ==========================================================================
+   Sentinel – Journal Admin Page
+   ========================================================================== */
+
+.sentinel-journal-section {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.sentinel-journal-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: #f6f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.sentinel-journal-stat {
+    font-size: 13px;
+    color: #50575e;
+}
+
+.sentinel-journal-stat strong {
+    color: #1d2327;
+}
+
+.sentinel-journal-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sentinel-journal-col-time {
+    width: 170px;
+    white-space: nowrap;
+}
+
+.sentinel-journal-col-channel {
+    width: 160px;
+}
+
+.sentinel-journal-col-data details > summary {
+    cursor: pointer;
+    list-style-position: outside;
+}
+
+.sentinel-journal-preview {
+    background: none;
+    padding: 0;
+    color: #50575e;
+    word-break: break-all;
+}
+
+.sentinel-journal-json {
+    margin: 8px 0 4px;
+    padding: 12px;
+    max-height: 480px;
+    overflow: auto;
+    background: #f6f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.sentinel-journal-id {
+    margin: 0;
+    font-size: 12px;
+    color: #646970;
+}
+
+.sentinel-journal-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: #646970;
+}
+
+.sentinel-journal-empty .dashicons {
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+}
+
+.sentinel-journal-pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+@media (max-width: 782px) {
+    .sentinel-journal-col-time,
+    .sentinel-journal-col-channel {
+        width: auto;
+    }
+}

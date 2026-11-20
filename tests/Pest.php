@@ -12,7 +12,7 @@ declare(strict_types=1);
 //     get_plugin_data() stubs, and the on-disk fixtures (wp-config.php, fixture
 //     plugins) those screens read and rewrite; its helpers are called from the
 //     tests as $this->makePlugin(), $this->writeWpConfig(), $this->capture()...
-//   - Sentinel\Tests\TestCase — the logger tests. It loads the real
+//   - Sentinel\Tests\TestCase — the logger and journal tests. It loads the real
 //     sentinel-logger.php and seeds the schema-version option so
 //     Sentinel_Logger::instance() never reaches dbDelta.
 //   - wp-mocks' own TestCase — LoggerManagerTest, which is purely filesystem-
@@ -50,6 +50,7 @@ pest()->extend(AdminTestCase::class)->in(
 );
 
 pest()->extend(TestCase::class)->in(
+    'Unit/Journal',
     'Unit/Logger/HasLoggerTest.php',
     'Unit/Logger/LogChannelTest.php',
     'Unit/Logger/LoggerManagerDeploymentTest.php',

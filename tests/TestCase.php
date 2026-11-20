@@ -45,6 +45,9 @@ abstract class TestCase extends WpMocksTestCase
         // already matches, which keeps dbDelta and $wpdb out of unit tests.
         WpState::$options['sentinel_logger_db_version'] = \Sentinel_Logger::DB_VERSION;
 
+        // The journal's table check works the same way, on its own option.
+        WpState::$options[\Sentinel_Journal::DB_VERSION_OPTION] = \Sentinel_Journal::DB_VERSION;
+
         // Not stubbed: register_shutdown_function, which the constructor calls
         // to flush the buffer at end of request. It is an internal PHP function
         // and neither Patchwork nor Brain Monkey will override those. Harmless

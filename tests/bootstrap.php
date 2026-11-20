@@ -266,14 +266,17 @@ if (!class_exists('Sentinel_Test_Wpdb')) {
         /** @var array<int, array{0: string, 1: array<string, mixed>}> Rows passed to insert(). */
         public array $inserts = [];
 
+        /** What insert() answers; false stands in for a failed write. */
+        public int|false $insertReturn = 1;
+
         /**
          * @param array<string, mixed> $data
          */
-        public function insert(string $table, array $data): int
+        public function insert(string $table, array $data): int|false
         {
             $this->inserts[] = [$table, $data];
 
-            return 1;
+            return $this->insertReturn;
         }
 
         public function get_charset_collate(): string

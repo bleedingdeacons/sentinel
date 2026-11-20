@@ -92,6 +92,13 @@ class LoggerManager
         if (class_exists('Sentinel_Logger')) {
             \Sentinel_Logger::createTable();
         }
+
+        // Likewise the journal's. On an upgrade from a version without it the
+        // class is not loaded yet (this request runs the old mu-plugin), and
+        // Sentinel_Journal::record() creates the table on first use instead.
+        if (class_exists('Sentinel_Journal')) {
+            \Sentinel_Journal::maybeCreateTable();
+        }
     }
 
     /**
@@ -149,24 +156,37 @@ class LoggerManager
     }
 
     /**
-     * Remove log data created by the logger.
+     * Remove the data created by the logger: the log and the journal.
      *
-     * Drops the database table and removes the schema version option.
+     * Drops both database tables and removes their schema version options.
      * Called from uninstall.php for a full cleanup.
      */
     public static function cleanLogs(): void
     {
+        // When the mu-plugin has already been removed its classes are not
+        // available, so each table is dropped directly by name instead.
         if (class_exists('Sentinel_Logger')) {
             \Sentinel_Logger::dropTable();
-            return;
+        } else {
+            self::dropTable('sentinel_log_entries', 'sentinel_logger_db_version');
         }
 
-        // Fallback: if the mu-plugin has already been removed and the class
-        // isn't available, drop the table directly.
+        if (class_exists('Sentinel_Journal')) {
+            \Sentinel_Journal::dropTable();
+        } else {
+            self::dropTable('sentinel_journal', 'sentinel_journal_db_version');
+        }
+    }
+
+    /**
+     * Drop one of the logger's tables by its unprefixed name.
+     */
+    private static function dropTable(string $name, string $versionOption): void
+    {
         global $wpdb;
-        $table = $wpdb->prefix . 'sentinel_log_entries';
+        $table = $wpdb->prefix . $name;
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; cannot be parameterised with prepare()
         $wpdb->query("DROP TABLE IF EXISTS `" . esc_sql($table) . "`");
-        delete_option('sentinel_logger_db_version');
+        delete_option($versionOption);
     }
 }

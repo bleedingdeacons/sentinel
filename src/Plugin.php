@@ -10,9 +10,11 @@ if (!defined('ABSPATH')) {
 }
 
 use Sentinel\Admin\StatusDashboard;
+use Sentinel\Admin\JournalPage;
 use Sentinel\Admin\LogViewerPage;
 use Sentinel\Admin\SettingsPage;
 use Sentinel\Admin\UnityControlPage;
+use Sentinel\Journal\HasJournal;
 use Sentinel\Logger\HasLogger;
 
 /**
@@ -21,6 +23,7 @@ use Sentinel\Logger\HasLogger;
 class Plugin
 {
     use HasLogger;
+    use HasJournal;
 
     private static bool $initialized = false;
 
@@ -31,6 +34,11 @@ class Plugin
     private const CAPABILITY = 'manage_options';
 
     protected static function logChannel(): string
+    {
+        return 'sentinel';
+    }
+
+    protected static function journalChannel(): string
     {
         return 'sentinel';
     }
@@ -58,6 +66,12 @@ class Plugin
                 LogViewerPage::init();
             } catch (\Throwable $e) {
                 self::logError('LogViewerPage failed to initialise: ' . $e->getMessage());
+            }
+
+            try {
+                JournalPage::init();
+            } catch (\Throwable $e) {
+                self::logError('JournalPage failed to initialise: ' . $e->getMessage());
             }
 
             SettingsPage::init();
